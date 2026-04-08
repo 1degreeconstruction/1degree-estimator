@@ -975,7 +975,7 @@ Return ONLY valid JSON in this exact format:
         if (pricingRows.length > 0) {
           const contextStr = pricingRows.slice(0, 8).join("\n");
           // Keep under 500 chars
-          pricingContext = "\nRECENT PRICING DATA (from your actual projects):\n" + contextStr.slice(0, 450) + "\n";
+          pricingContext = "\nRECENT PRICING DATA (from your actual projects):\n" + contextStr + "\n";
         }
       } catch {
         // pricing history lookup failure is non-fatal
@@ -991,11 +991,11 @@ Return ONLY valid JSON in this exact format:
         // Build compact existing line items context (50 chars per scope)
         const compactItems = existingLineItems
           .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map(li => `${li.phaseGroup} | ${(li.scopeDescription || "").slice(0, 50)} | $${li.subCost}`)
+          .map(li => `${li.phaseGroup} | ${li.scopeDescription || ""} | $${li.subCost}`)
           .join("\n");
 
         // Limit ai_log to last 500 chars
-        const recentLog = aiLog.length > 500 ? aiLog.slice(-500) : aiLog;
+        const recentLog = aiLog;
 
         // Build context block, total capped at 2000 chars
         let contextBlock = "";
@@ -1023,7 +1023,7 @@ Return ONLY valid JSON in this exact format:
       const anthropic = new Anthropic();
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
+        max_tokens: 8192,
         messages: [{ role: "user", content: finalPrompt }],
         system: systemPrompt,
       });
