@@ -195,6 +195,7 @@ export async function registerRoutes(
       { method: "GET", pattern: /^\/api\/estimates\/public\// },
       { method: "POST", pattern: /^\/api\/estimates\/public\/.*\/sign$/ },
       { method: "GET", pattern: /^\/api\/reviews$/ },
+      { method: "GET", pattern: /^\/api\/places\// },
     ];
 
     for (const route of publicRoutes) {
@@ -324,14 +325,14 @@ export async function registerRoutes(
       const estimate = await storage.createEstimate({
         estimateNumber,
         uniqueId,
-        clientName: estimateData.clientName,
-        clientEmail: estimateData.clientEmail,
-        clientPhone: estimateData.clientPhone,
-        projectAddress: estimateData.projectAddress,
-        city: estimateData.city,
-        state: estimateData.state,
-        zip: estimateData.zip,
-        salesRepId: estimateData.salesRepId,
+        clientName: estimateData.clientName || "",
+        clientEmail: estimateData.clientEmail || "",
+        clientPhone: estimateData.clientPhone || "",
+        projectAddress: estimateData.projectAddress || "",
+        city: estimateData.city || "",
+        state: estimateData.state || "CA",
+        zip: estimateData.zip || "",
+        salesRepId: estimateData.salesRepId || 0,
         status: estimateData.status || "draft",
         createdAt: now,
         validUntil: addDays(now, 45).toISOString(),
@@ -424,14 +425,14 @@ export async function registerRoutes(
       const isSending = estimateData.status === "sent" && wasDraft;
 
       const estimate = await storage.updateEstimate(id, {
-        clientName: estimateData.clientName,
-        clientEmail: estimateData.clientEmail,
-        clientPhone: estimateData.clientPhone,
-        projectAddress: estimateData.projectAddress,
-        city: estimateData.city,
-        state: estimateData.state,
-        zip: estimateData.zip,
-        salesRepId: estimateData.salesRepId,
+        clientName: estimateData.clientName || "",
+        clientEmail: estimateData.clientEmail || "",
+        clientPhone: estimateData.clientPhone || "",
+        projectAddress: estimateData.projectAddress || "",
+        city: estimateData.city || "",
+        state: estimateData.state || "CA",
+        zip: estimateData.zip || "",
+        salesRepId: estimateData.salesRepId || 0,
         status: estimateData.status,
         totalSubCost,
         totalClientPrice,
@@ -604,6 +605,41 @@ export async function registerRoutes(
       res.json(user);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Google Places Autocomplete proxy (no auth required for UX, key stays server-side)
+  app.get("/api/places/autocomplete", async (req, res) => {
+    const input = (req.query.input as string) || "";
+    if (!input || input.length < 3) return res.json({ predictions: [] });
+
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.json({ predictions: [] });
+
+    try {
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&types=address&components=country:us&key=${apiKey}`;
+      const response = await fetch(url);
+      const data = await response.json() as any;
+      res.json({ predictions: data.predictions || [] });
+    } catch {
+      res.json({ predictions: [] });
+    }
+  });
+
+  app.get("/api/places/detail", async (req, res) => {
+    const placeId = (req.query.place_id as string) || "";
+    if (!placeId) return res.json({});
+
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.json({});
+
+    try {
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=address_components,formatted_address&key=${apiKey}`;
+      const response = await fetch(url);
+      const data = await response.json() as any;
+      res.json(data);
+    } catch {
+      res.json({});
     }
   });
 

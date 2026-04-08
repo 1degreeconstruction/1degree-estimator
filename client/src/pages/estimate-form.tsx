@@ -17,7 +17,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { PHASE_GROUPS, GROUPED_PHASES } from "@shared/schema";
 import type { SalesRep, Estimate, LineItem, PaymentMilestone } from "@shared/schema";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 
 interface LineItemForm {
   phaseGroup: string;
@@ -291,11 +292,29 @@ export default function EstimateForm() {
     },
   });
 
+  const handleAddressSelect = useCallback(
+    (components: { address: string; city: string; state: string; zip: string }) => {
+      setProjectAddress(components.address);
+      setCity(components.city);
+      setState(components.state);
+      setZip(components.zip);
+    },
+    []
+  );
+
   const handleSave = (status: string) => {
-    if (!clientName || !clientEmail || !projectAddress) {
-      toast({ title: "Missing fields", description: "Please fill in client name, email, and project address.", variant: "destructive" });
-      return;
+    // Only validate required fields when sending to client
+    if (status === "sent") {
+      if (!clientName || !projectAddress) {
+        toast({
+          title: "Missing fields",
+          description: "Client name and project address are required to send to client.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
+    // Drafts can be saved with any (including empty) fields
     if (isEditing) {
       updateMutation.mutate(status);
     } else {
@@ -383,11 +402,11 @@ export default function EstimateForm() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="clientName">Client Name *</Label>
+                    <Label htmlFor="clientName">Client Name</Label>
                     <Input id="clientName" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="John Smith" data-testid="input-client-name" />
                   </div>
                   <div>
-                    <Label htmlFor="clientEmail">Email *</Label>
+                    <Label htmlFor="clientEmail">Email</Label>
                     <Input id="clientEmail" type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} placeholder="john@example.com" data-testid="input-client-email" />
                   </div>
                   <div>
@@ -410,8 +429,15 @@ export default function EstimateForm() {
                 </div>
                 <Separator />
                 <div>
-                  <Label htmlFor="projectAddress">Project Address *</Label>
-                  <Input id="projectAddress" value={projectAddress} onChange={e => setProjectAddress(e.target.value)} placeholder="123 Main St" data-testid="input-project-address" />
+                  <Label htmlFor="projectAddress">Project Address</Label>
+                  <AddressAutocomplete
+                    id="projectAddress"
+                    value={projectAddress}
+                    onChange={setProjectAddress}
+                    onAddressSelect={handleAddressSelect}
+                    placeholder="123 Main St"
+                    data-testid="input-project-address"
+                  />
                 </div>
                 <div className="grid grid-cols-3 gap-4">
                   <div>
