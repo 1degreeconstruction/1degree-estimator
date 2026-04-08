@@ -10,14 +10,14 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2, MessageSquare } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatCurrency } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { PHASE_GROUPS, GROUPED_PHASES } from "@shared/schema";
 import type { SalesRep, Estimate, LineItem, PaymentMilestone } from "@shared/schema";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 
 interface LineItemForm {
@@ -62,6 +62,34 @@ export default function EstimateForm() {
   const [milestones, setMilestones] = useState<MilestoneForm[]>([]);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
+  const [pricingChatOpen, setPricingChatOpen] = useState(false);
+  const [pricingMessages, setPricingMessages] = useState<Array<{role: string, content: string}>>([]);
+  const [pricingInput, setPricingInput] = useState("");
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const pricingEndRef = useRef<HTMLDivElement>(null);
+
+  const handlePricingChat = useCallback(async () => {
+    if (!pricingInput.trim() || pricingLoading) return;
+    const userMsg = { role: "user", content: pricingInput.trim() };
+    const newMessages = [...pricingMessages, userMsg];
+    setPricingMessages(newMessages);
+    setPricingInput("");
+    setPricingLoading(true);
+    setTimeout(() => pricingEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    try {
+      const res = await apiRequest("POST", "/api/pricing-chat", {
+        message: userMsg.content,
+        conversationHistory: newMessages.slice(-10),
+      });
+      const data = await res.json();
+      setPricingMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
+      setTimeout(() => pricingEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    } catch {
+      setPricingMessages(prev => [...prev, { role: "assistant", content: "Error connecting to pricing assistant." }]);
+    } finally {
+      setPricingLoading(false);
+    }
+  }, [pricingInput, pricingMessages, pricingLoading]);
   const [projectInclusions, setProjectInclusions] = useState("");
   const [projectExclusions, setProjectExclusions] = useState("");
 
@@ -732,6 +760,58 @@ export default function EstimateForm() {
                   </Button>
                 </div>
               </CardContent>
+            </Card>
+
+            {/* Pricing Assistant - inline chat */}
+            <Card className="mt-4" data-testid="section-pricing-assistant">
+              <Collapsible open={pricingChatOpen} onOpenChange={setPricingChatOpen}>
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="pb-3 cursor-pointer flex flex-row items-center justify-between">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4" /> Pricing Assistant
+                    </CardTitle>
+                    {pricingChatOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <div className="h-[300px] overflow-y-auto mb-3 space-y-2 border rounded-md p-2 bg-background">
+                      {pricingMessages.length === 0 && (
+                        <p className="text-xs text-muted-foreground text-center py-8">Ask about pricing, costs, or past projects...</p>
+                      )}
+                      {pricingMessages.map((msg, i) => (
+                        <div key={i} className={`text-xs p-2 rounded-md ${msg.role === 'user' ? 'bg-primary/10 ml-8 text-right' : 'bg-muted mr-8'}`}>
+                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                        </div>
+                      ))}
+                      {pricingLoading && (
+                        <div className="bg-muted mr-8 p-2 rounded-md">
+                          <span className="text-xs text-muted-foreground">Thinking...</span>
+                        </div>
+                      )}
+                      <div ref={pricingEndRef} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Textarea
+                        value={pricingInput}
+                        onChange={(e) => setPricingInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handlePricingChat();
+                          }
+                        }}
+                        placeholder="e.g. What did we pay for demo on the last bathroom remodel?"
+                        className="text-xs min-h-[36px] max-h-[72px]"
+                        rows={1}
+                      />
+                      <Button size="sm" onClick={handlePricingChat} disabled={pricingLoading || !pricingInput.trim()}>
+                        <Send className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </CollapsibleContent>
+              </Collapsible>
             </Card>
           </div>
         </div>
