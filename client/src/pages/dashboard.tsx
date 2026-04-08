@@ -6,20 +6,40 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Plus, Search, FileText, MapPin, Calendar, User } from "lucide-react";
 import { formatCurrency, formatDate, getStatusColor, getStatusLabel } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import type { Estimate, SalesRep } from "@shared/schema";
 
-type EnrichedEstimate = Estimate & { salesRep?: SalesRep };
+interface AuthUser {
+  id: number;
+  name: string;
+  avatarUrl: string | null;
+  role: string;
+}
+
+type EnrichedEstimate = Estimate & {
+  salesRep?: SalesRep;
+  createdByUser?: AuthUser;
+};
 
 export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [estimateScope, setEstimateScope] = useState<"all" | "mine">("all");
+  const { user } = useAuth();
 
   const { data: estimates, isLoading } = useQuery<EnrichedEstimate[]>({
-    queryKey: ["/api/estimates"],
+    queryKey: estimateScope === "mine" ? ["/api/estimates?mine=true"] : ["/api/estimates"],
+    queryFn: async () => {
+      const url = estimateScope === "mine" ? "/api/estimates?mine=true" : "/api/estimates";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch estimates");
+      return res.json();
+    },
   });
 
   const filtered = estimates?.filter(e => {
@@ -35,6 +55,9 @@ export default function Dashboard() {
     return true;
   });
 
+  const getInitials = (name: string) =>
+    name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+
   return (
     <AdminLayout>
       <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -43,7 +66,7 @@ export default function Dashboard() {
           <div>
             <h1 className="font-display text-xl font-bold" data-testid="page-title">Estimates</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {estimates?.length || 0} total estimates
+              {estimates?.length || 0} {estimateScope === "mine" ? "of your" : "total"} estimates
             </p>
           </div>
           <Link href="/estimates/new">
@@ -52,6 +75,30 @@ export default function Dashboard() {
               New Estimate
             </Button>
           </Link>
+        </div>
+
+        {/* Scope tabs — My Estimates / All Estimates */}
+        <div className="flex items-center gap-1 p-1 bg-muted rounded-lg w-fit">
+          <button
+            onClick={() => setEstimateScope("mine")}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              estimateScope === "mine"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            My Estimates
+          </button>
+          <button
+            onClick={() => setEstimateScope("all")}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              estimateScope === "all"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            All Estimates
+          </button>
         </div>
 
         {/* Filters */}
@@ -96,6 +143,8 @@ export default function Dashboard() {
             <p className="text-sm">
               {search || statusFilter !== "all"
                 ? "Try adjusting your filters"
+                : estimateScope === "mine"
+                ? "You haven't created any estimates yet"
                 : "Create your first estimate to get started"}
             </p>
           </div>
@@ -120,7 +169,7 @@ export default function Dashboard() {
                       <h3 className="font-semibold text-sm truncate group-hover:text-primary transition-colors" data-testid={`text-client-${estimate.id}`}>
                         {estimate.clientName}
                       </h3>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
                           {estimate.projectAddress}, {estimate.city}
@@ -133,6 +182,19 @@ export default function Dashboard() {
                           <span className="flex items-center gap-1">
                             <User className="w-3 h-3" />
                             {estimate.salesRep.name}
+                          </span>
+                        )}
+                        {estimateScope === "all" && estimate.createdByUser && estimate.createdByUser.id !== user?.id && (
+                          <span className="flex items-center gap-1.5">
+                            <Avatar className="h-4 w-4">
+                              {estimate.createdByUser.avatarUrl && (
+                                <AvatarImage src={estimate.createdByUser.avatarUrl} />
+                              )}
+                              <AvatarFallback className="text-[8px]">
+                                {getInitials(estimate.createdByUser.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span>{estimate.createdByUser.name}</span>
                           </span>
                         )}
                       </div>

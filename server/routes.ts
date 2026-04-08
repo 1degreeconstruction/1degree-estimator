@@ -1,8 +1,51 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { format, addDays } from "date-fns";
 import Anthropic from "@anthropic-ai/sdk";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import session from "express-session";
+import cookieParser from "cookie-parser";
+import cors from "cors";
+import MemoryStore from "memorystore";
+import type { User } from "@shared/schema";
+
+// Extend Express Request to include user
+declare global {
+  namespace Express {
+    interface User {
+      id: number;
+      googleId: string;
+      email: string;
+      name: string;
+      avatarUrl: string | null;
+      role: string;
+      isActive: boolean;
+      createdAt: Date;
+      lastLoginAt: Date | null;
+    }
+  }
+}
+
+const MemoryStoreSession = MemoryStore(session);
+
+const PRE_APPROVED_EMAILS: Record<string, string> = {
+  "1degreeconstruction@gmail.com": "admin",
+  "david@1degreeconstruction.com": "admin",
+  "thai@1degreeconstruction.com": "admin",
+};
+
+// Auth middleware
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (req.isAuthenticated()) return next();
+  return res.status(401).json({ error: "Unauthorized" });
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (req.isAuthenticated() && req.user?.role === "admin") return next();
+  return res.status(403).json({ error: "Forbidden" });
+}
 
 function generateUniqueId(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -30,6 +73,150 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // CORS — must be before other middleware
+  app.use(cors({
+    origin: process.env.FRONTEND_URL || "https://1degree-estimator.vercel.app",
+    credentials: true,
+  }));
+
+  // Cookie parser
+  app.use(cookieParser());
+
+  // Session
+  app.use(session({
+    secret: process.env.SESSION_SECRET || "dev-secret-1degree",
+    resave: false,
+    saveUninitialized: false,
+    store: new MemoryStoreSession({
+      checkPeriod: 86400000, // prune expired entries every 24h
+    }),
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    },
+  }));
+
+  // Passport
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  // Serialize/Deserialize user
+  passport.serializeUser((user: Express.User, done) => {
+    done(null, user.id);
+  });
+
+  passport.deserializeUser(async (id: number, done) => {
+    try {
+      const user = await storage.getUser(id);
+      done(null, user || false);
+    } catch (err) {
+      done(err);
+    }
+  });
+
+  // Google OAuth Strategy
+  passport.use(new GoogleStrategy(
+    {
+      clientID: process.env.GOOGLE_CLIENT_ID || "124225853613-okfnb5gconblb1bhtr4tnloj3n4d77m8.apps.googleusercontent.com",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "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",
+      callbackURL: process.env.GOOGLE_CALLBACK_URL || "https://onedegree-estimator.onrender.com/auth/google/callback",
+    },
+    async (_accessToken, _refreshToken, profile, done) => {
+      try {
+        const googleId = profile.id;
+        const email = profile.emails?.[0]?.value || "";
+        const name = profile.displayName || "";
+        const avatarUrl = profile.photos?.[0]?.value || null;
+
+        // Look up existing user
+        let user = await storage.getUserByGoogleId(googleId);
+
+        if (user) {
+          // Update last login
+          user = await storage.updateUser(user.id, { lastLoginAt: new Date() });
+          return done(null, user as Express.User);
+        }
+
+        // New user — check if pre-approved
+        const preApprovedRole = PRE_APPROVED_EMAILS[email.toLowerCase()];
+        const isActive = !!preApprovedRole;
+        const role = preApprovedRole || "estimator";
+
+        const newUser = await storage.createUser({
+          googleId,
+          email,
+          name,
+          avatarUrl,
+          role,
+          isActive,
+          createdAt: new Date(),
+          lastLoginAt: new Date(),
+        });
+
+        return done(null, newUser as Express.User);
+      } catch (err) {
+        return done(err as Error);
+      }
+    }
+  ));
+
+  // --- Auth Routes ---
+
+  app.get("/auth/google", passport.authenticate("google", {
+    scope: ["profile", "email"],
+  }));
+
+  app.get("/auth/google/callback",
+    passport.authenticate("google", { failureRedirect: "/login" }),
+    (req, res) => {
+      const user = req.user as Express.User;
+      const frontendUrl = process.env.FRONTEND_URL || "https://1degree-estimator.vercel.app";
+
+      if (!user.isActive) {
+        return res.redirect(`${frontendUrl}/#/?error=pending_approval`);
+      }
+
+      return res.redirect(frontendUrl);
+    }
+  );
+
+  app.get("/auth/me", (req, res) => {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    return res.json(req.user);
+  });
+
+  app.post("/auth/logout", (req, res) => {
+    req.logout((err) => {
+      if (err) return res.status(500).json({ error: "Logout failed" });
+      req.session.destroy(() => {
+        res.json({ success: true });
+      });
+    });
+  });
+
+  // --- API Auth Middleware ---
+  // Apply requireAuth to all /api/* routes except the public ones
+  app.use("/api", (req, res, next) => {
+    // Public routes — no auth needed
+    const publicRoutes = [
+      { method: "GET", pattern: /^\/api\/estimates\/public\// },
+      { method: "POST", pattern: /^\/api\/estimates\/public\/.*\/sign$/ },
+      { method: "GET", pattern: /^\/api\/reviews$/ },
+    ];
+
+    for (const route of publicRoutes) {
+      if (req.method === route.method && route.pattern.test(req.path)) {
+        return next();
+      }
+    }
+
+    return requireAuth(req, res, next);
+  });
+
   // Sales Reps
   app.get("/api/sales-reps", async (_req, res) => {
     try {
@@ -40,14 +227,20 @@ export async function registerRoutes(
     }
   });
 
-  // Estimates - list
-  app.get("/api/estimates", async (_req, res) => {
+  // Estimates - list (supports ?mine=true)
+  app.get("/api/estimates", async (req, res) => {
     try {
-      const estimatesList = await storage.getEstimates();
+      const mine = req.query.mine === "true";
+      const userId = mine && req.user ? (req.user as Express.User).id : undefined;
+
+      const estimatesList = await storage.getEstimates(userId);
       const reps = await storage.getSalesReps();
+      const usersList = await storage.listUsers();
+
       const enriched = estimatesList.map(e => ({
         ...e,
         salesRep: reps.find(r => r.id === e.salesRepId),
+        createdByUser: usersList.find(u => u.id === e.createdByUserId),
       }));
       res.json(enriched);
     } catch (err: any) {
@@ -75,7 +268,7 @@ export async function registerRoutes(
     }
   });
 
-  // Estimates - get by unique ID (client-facing)
+  // Estimates - get by unique ID (client-facing, PUBLIC)
   app.get("/api/estimates/public/:uniqueId", async (req, res) => {
     try {
       const estimate = await storage.getEstimateByUniqueId(req.params.uniqueId);
@@ -137,6 +330,8 @@ export async function registerRoutes(
       const totalClientPrice = Math.round((totalBeforeAllowance + allowanceAmount) * 100) / 100;
       const depositAmount = Math.min(1000, Math.round(totalClientPrice * 0.1 * 100) / 100);
 
+      const currentUserId = req.user ? (req.user as Express.User).id : null;
+
       const estimate = await storage.createEstimate({
         estimateNumber,
         uniqueId,
@@ -162,6 +357,7 @@ export async function registerRoutes(
         approvedAt: null,
         signatureName: null,
         signatureTimestamp: null,
+        createdByUserId: currentUserId,
       });
 
       // Create line items
@@ -304,7 +500,7 @@ export async function registerRoutes(
     }
   });
 
-  // Client sign estimate
+  // Client sign estimate (PUBLIC)
   app.post("/api/estimates/public/:uniqueId/sign", async (req, res) => {
     try {
       const estimate = await storage.getEstimateByUniqueId(req.params.uniqueId);
@@ -355,7 +551,7 @@ export async function registerRoutes(
     }
   });
 
-  // Reviews data (hardcoded for now — ready for live API/scraping integration later)
+  // Reviews data (PUBLIC)
   app.get("/api/reviews", (_req, res) => {
     res.json({
       google: {
@@ -376,6 +572,50 @@ export async function registerRoutes(
         badge: "Featured Pro",
       },
     });
+  });
+
+  // Admin routes
+  app.get("/api/admin/users", requireAdmin, async (_req, res) => {
+    try {
+      const usersList = await storage.listUsers();
+      res.json(usersList);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/admin/users/:id/approve", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const user = await storage.updateUser(id, { isActive: true });
+      res.json(user);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/admin/users/:id/role", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const { role } = req.body;
+      if (!["admin", "estimator", "viewer"].includes(role)) {
+        return res.status(400).json({ error: "Invalid role" });
+      }
+      const user = await storage.updateUser(id, { role });
+      res.json(user);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id));
+      const user = await storage.updateUser(id, { isActive: false });
+      res.json(user);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // AI estimate generation

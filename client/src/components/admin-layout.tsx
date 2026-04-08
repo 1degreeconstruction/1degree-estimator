@@ -1,13 +1,10 @@
 import { Link, useLocation } from "wouter";
 import { useTheme } from "./theme-provider";
-import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X } from "lucide-react";
+import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X, Users, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useState } from "react";
-
-const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/estimates/new", label: "New Estimate", icon: Plus },
-];
+import { useAuth } from "@/hooks/use-auth";
 
 function Logo() {
   return (
@@ -22,6 +19,18 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { theme, setTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, logout } = useAuth();
+
+  const isAdmin = user?.role === "admin";
+
+  const getInitials = (name: string) =>
+    name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+
+  const NAV_ITEMS = [
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/estimates/new", label: "New Estimate", icon: Plus },
+    ...(isAdmin ? [{ href: "/admin/users", label: "Team", icon: Users }] : []),
+  ];
 
   return (
     <div className="flex h-screen overflow-hidden" data-testid="admin-layout">
@@ -50,6 +59,22 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             <p className="text-xs text-muted-foreground">Construction</p>
           </div>
         </div>
+
+        {/* User info */}
+        {user && (
+          <div className="px-4 py-3 border-b">
+            <div className="flex items-center gap-2.5">
+              <Avatar className="h-8 w-8 shrink-0">
+                {user.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name} />}
+                <AvatarFallback className="text-xs">{getInitials(user.name)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate leading-tight">{user.name}</p>
+                <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+              </div>
+            </div>
+          </div>
+        )}
         
         <nav className="flex-1 p-3 space-y-1" data-testid="nav">
           {NAV_ITEMS.map(item => {
@@ -73,7 +98,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         
-        <div className="p-3 border-t">
+        <div className="p-3 border-t space-y-1">
           <Button
             variant="ghost"
             size="sm"
@@ -83,6 +108,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           >
             {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             {theme === "dark" ? "Light Mode" : "Dark Mode"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            onClick={logout}
+            data-testid="logout-button"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
           </Button>
         </div>
       </aside>

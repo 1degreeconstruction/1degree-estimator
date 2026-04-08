@@ -42,6 +42,7 @@ export const estimates = pgTable("estimates", {
   depositAmount: real("deposit_amount").notNull().default(0),
   permitRequired: boolean("permit_required").notNull().default(false),
   uniqueId: text("unique_id").notNull().unique(),
+  createdByUserId: integer("created_by_user_id"),
 });
 
 export const insertEstimateSchema = createInsertSchema(estimates).omit({ id: true });

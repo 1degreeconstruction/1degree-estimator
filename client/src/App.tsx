@@ -11,16 +11,76 @@ import EstimateForm from "@/pages/estimate-form";
 import EstimateDetail from "@/pages/estimate-detail";
 import ClientEstimate from "@/pages/client-estimate";
 import ClientConfirmation from "@/pages/client-confirmation";
+import Login from "@/pages/login";
+import AdminUsers from "@/pages/admin-users";
+import { useAuth } from "@/hooks/use-auth";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function AuthGuard({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="space-y-3 w-64">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  return <>{children}</>;
+}
 
 function AppRouter() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/estimates/new" component={EstimateForm} />
-      <Route path="/estimates/:id/edit" component={EstimateForm} />
-      <Route path="/estimates/:id" component={EstimateDetail} />
+      {/* Public client-facing routes — no auth required */}
       <Route path="/estimate/:uniqueId" component={ClientEstimate} />
       <Route path="/estimate/:uniqueId/confirmation" component={ClientConfirmation} />
+
+      {/* Protected admin routes */}
+      <Route path="/">
+        {() => (
+          <AuthGuard>
+            <Dashboard />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/estimates/new">
+        {() => (
+          <AuthGuard>
+            <EstimateForm />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/estimates/:id/edit">
+        {() => (
+          <AuthGuard>
+            <EstimateForm />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/estimates/:id">
+        {() => (
+          <AuthGuard>
+            <EstimateDetail />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/admin/users">
+        {() => (
+          <AuthGuard>
+            <AdminUsers />
+          </AuthGuard>
+        )}
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );

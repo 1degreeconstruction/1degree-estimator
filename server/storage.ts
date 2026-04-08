@@ -4,6 +4,7 @@ import {
   type LineItem, type InsertLineItem, lineItems,
   type PaymentMilestone, type InsertMilestone, paymentMilestones,
   type EstimateEvent, type InsertEvent, estimateEvents,
+  type User, type InsertUser, users,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -24,7 +25,7 @@ export interface IStorage {
   createSalesRep(rep: InsertSalesRep): Promise<SalesRep>;
 
   // Estimates
-  getEstimates(): Promise<Estimate[]>;
+  getEstimates(createdByUserId?: number): Promise<Estimate[]>;
   getEstimate(id: number): Promise<Estimate | undefined>;
   getEstimateByUniqueId(uniqueId: string): Promise<Estimate | undefined>;
   createEstimate(estimate: InsertEstimate): Promise<Estimate>;
@@ -43,6 +44,14 @@ export interface IStorage {
   // Events
   getEvents(estimateId: number): Promise<EstimateEvent[]>;
   createEvent(event: InsertEvent): Promise<EstimateEvent>;
+
+  // Users
+  getUser(id: number): Promise<User | undefined>;
+  getUserByGoogleId(googleId: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, updates: Partial<User>): Promise<User>;
+  listUsers(): Promise<User[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -62,7 +71,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Estimates
-  async getEstimates(): Promise<Estimate[]> {
+  async getEstimates(createdByUserId?: number): Promise<Estimate[]> {
+    if (createdByUserId !== undefined) {
+      return db.select().from(estimates)
+        .where(eq(estimates.createdByUserId, createdByUserId))
+        .orderBy(desc(estimates.createdAt));
+    }
     return db.select().from(estimates).orderBy(desc(estimates.createdAt));
   }
 
@@ -123,9 +137,51 @@ export class DatabaseStorage implements IStorage {
     const rows = await db.insert(estimateEvents).values(event).returning();
     return rows[0];
   }
+
+  // Users
+  async getUser(id: number): Promise<User | undefined> {
+    const rows = await db.select().from(users).where(eq(users.id, id));
+    return rows[0];
+  }
+
+  async getUserByGoogleId(googleId: string): Promise<User | undefined> {
+    const rows = await db.select().from(users).where(eq(users.googleId, googleId));
+    return rows[0];
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const rows = await db.select().from(users).where(eq(users.email, email));
+    return rows[0];
+  }
+
+  async createUser(user: InsertUser): Promise<User> {
+    const rows = await db.insert(users).values(user).returning();
+    return rows[0];
+  }
+
+  async updateUser(id: number, updates: Partial<User>): Promise<User> {
+    const rows = await db.update(users).set(updates).where(eq(users.id, id)).returning();
+    return rows[0];
+  }
+
+  async listUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(desc(users.createdAt));
+  }
 }
 
 export const storage = new DatabaseStorage();
+
+// Initialize DB: add created_by_user_id column if missing
+async function initializeDb() {
+  try {
+    await pool.query(`
+      ALTER TABLE estimates ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER REFERENCES users(id);
+    `);
+    console.log("DB initialization complete.");
+  } catch (err) {
+    console.error("DB init error:", err);
+  }
+}
 
 // Seed sales reps on startup
 async function seedSalesReps() {
@@ -142,4 +198,4 @@ async function seedSalesReps() {
   }
 }
 
-seedSalesReps();
+initializeDb().then(() => seedSalesReps());
