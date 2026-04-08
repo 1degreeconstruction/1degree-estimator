@@ -9,8 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Check, X, Users } from "lucide-react";
 import { format } from "date-fns";
-
-const BACKEND_URL = "https://onedegree-estimator.onrender.com";
+import { apiRequest } from "@/lib/queryClient";
 
 interface AppUser {
   id: number;
@@ -25,10 +24,7 @@ interface AppUser {
 }
 
 async function fetchUsers(): Promise<AppUser[]> {
-  const res = await fetch(`${BACKEND_URL}/api/admin/users`, {
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to fetch users");
+  const res = await apiRequest("GET", "/api/admin/users");
   return res.json();
 }
 
@@ -44,11 +40,7 @@ export default function AdminUsers() {
 
   const approveMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${BACKEND_URL}/api/admin/users/${id}/approve`, {
-        method: "PATCH",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to approve user");
+      const res = await apiRequest("PATCH", `/api/admin/users/${id}/approve`);
       return res.json();
     },
     onSuccess: () => {
@@ -62,11 +54,7 @@ export default function AdminUsers() {
 
   const deactivateMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${BACKEND_URL}/api/admin/users/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to deactivate user");
+      const res = await apiRequest("DELETE", `/api/admin/users/${id}`);
       return res.json();
     },
     onSuccess: () => {
@@ -80,13 +68,7 @@ export default function AdminUsers() {
 
   const roleMutation = useMutation({
     mutationFn: async ({ id, role }: { id: number; role: string }) => {
-      const res = await fetch(`${BACKEND_URL}/api/admin/users/${id}/role`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ role }),
-      });
-      if (!res.ok) throw new Error("Failed to update role");
+      const res = await apiRequest("PATCH", `/api/admin/users/${id}/role`, { role });
       return res.json();
     },
     onSuccess: () => {

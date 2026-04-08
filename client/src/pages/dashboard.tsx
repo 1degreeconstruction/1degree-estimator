@@ -36,8 +36,7 @@ export default function Dashboard() {
     queryKey: estimateScope === "mine" ? ["/api/estimates?mine=true"] : ["/api/estimates"],
     queryFn: async () => {
       const url = estimateScope === "mine" ? "/api/estimates?mine=true" : "/api/estimates";
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch estimates");
+      const res = await apiRequest("GET", url);
       return res.json();
     },
   });
