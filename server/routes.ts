@@ -664,35 +664,39 @@ export async function registerRoutes(
   });
 
   // Google Places Autocomplete proxy (no auth required for UX, key stays server-side)
-  // California address autocomplete via free data.ca.gov API
+  // Free address autocomplete via OpenStreetMap Nominatim — no API key needed
   app.get("/api/places/autocomplete", async (req, res) => {
     const input = (req.query.input as string) || "";
     if (!input || input.length < 3) return res.json({ predictions: [] });
 
     try {
-      const parts = input.split(",").map(s => s.trim());
-      const addressPart = parts[0] || "";
-      const cityPart = parts[1] || "";
-
-      let sql = `SELECT "ADDRESS","CITY","ST","ZIP" FROM "00347528-9264-4259-a44d-b1b58f7cae78" WHERE "ADDRESS" ILIKE '${addressPart.replace(/'/g, "''")}%'`;
-      if (cityPart) {
-        sql += ` AND "CITY" ILIKE '${cityPart.replace(/'/g, "''")}%'`;
-      }
-      sql += ` LIMIT 8`;
-
       const response = await fetch(
-        `https://data.ca.gov/api/3/action/datastore_search_sql?sql=${encodeURIComponent(sql)}`
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(input)}&format=json&addressdetails=1&countrycodes=us&limit=6`,
+        { headers: { "User-Agent": "1DegreeConstructionEstimator/1.0" } }
       );
-      const data = await response.json() as any;
+      const results = await response.json() as any[];
 
-      const predictions = (data?.result?.records || []).map((r: any, i: number) => ({
-        place_id: `ca_${i}`,
-        description: `${r.ADDRESS}, ${r.CITY}, ${r.ST} ${r.ZIP}`,
-        address: r.ADDRESS,
-        city: r.CITY,
-        state: r.ST || "CA",
-        zip: r.ZIP,
-      }));
+      const predictions = results
+        .filter((r: any) => r.address?.road || r.address?.house_number)
+        .map((r: any, i: number) => {
+          const a = r.address || {};
+          const houseNum = a.house_number || "";
+          const road = a.road || "";
+          const street = [houseNum, road].filter(Boolean).join(" ");
+          const city = a.city || a.town || a.village || a.hamlet || "";
+          const state = a.state || "";
+          const stateAbbr = state === "California" ? "CA" : state.slice(0, 2).toUpperCase();
+          const zip = a.postcode || "";
+
+          return {
+            place_id: `osm_${i}`,
+            description: `${street}, ${city}, ${stateAbbr} ${zip}`.trim(),
+            address: street,
+            city: city,
+            state: stateAbbr,
+            zip: zip,
+          };
+        });
 
       res.json({ predictions });
     } catch {
