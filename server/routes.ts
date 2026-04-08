@@ -34,6 +34,7 @@ const PRE_APPROVED_EMAILS: Record<string, string> = {
   "1degreeconstruction@gmail.com": "admin",
   "david@1degreeconstruction.com": "admin",
   "thai@1degreeconstruction.com": "admin",
+  "oliver@1degreeconstruction.com": "admin",
 };
 
 // Auth middleware
