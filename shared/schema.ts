@@ -43,6 +43,7 @@ export const estimates = pgTable("estimates", {
   permitRequired: boolean("permit_required").notNull().default(false),
   uniqueId: text("unique_id").notNull().unique(),
   createdByUserId: integer("created_by_user_id"),
+  aiLog: text("ai_log"),
 });
 
 export const insertEstimateSchema = createInsertSchema(estimates).omit({ id: true });
@@ -175,6 +176,22 @@ export const estimateVersions = pgTable("estimate_versions", {
 export const insertVersionSchema = createInsertSchema(estimateVersions).omit({ id: true });
 export type InsertVersion = z.infer<typeof insertVersionSchema>;
 export type EstimateVersion = typeof estimateVersions.$inferSelect;
+
+// Pricing History
+export const pricingHistory = pgTable("pricing_history", {
+  id: serial("id").primaryKey(),
+  trade: text("trade").notNull(),
+  scopeKeyword: text("scope_keyword").notNull(),
+  subCost: real("sub_cost").notNull(),
+  city: text("city"),
+  source: text("source").notNull().default("user_edit"),
+  estimateId: integer("estimate_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPricingHistorySchema = createInsertSchema(pricingHistory).omit({ id: true });
+export type InsertPricingHistory = z.infer<typeof insertPricingHistorySchema>;
+export type PricingHistory = typeof pricingHistory.$inferSelect;
 
 // Phase group constants
 export const PHASE_GROUPS = [

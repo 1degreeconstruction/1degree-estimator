@@ -299,6 +299,31 @@ export async function registerRoutes(
     }
   });
 
+  // Pricing History endpoints
+  app.post("/api/pricing-history", async (req, res) => {
+    try {
+      const { trade, scopeKeyword, subCost, city, estimateId } = req.body;
+      if (!trade || !scopeKeyword || subCost === undefined) {
+        return res.status(400).json({ error: "trade, scopeKeyword, subCost are required" });
+      }
+      await storage.logPricing([{ trade, scopeKeyword, subCost, city, source: "user_edit", estimateId }]);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/pricing-history", async (req, res) => {
+    try {
+      const trade = req.query.trade as string;
+      if (!trade) return res.status(400).json({ error: "trade query param required" });
+      const rows = await storage.getRecentPricing(trade, 10);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Create estimate
   app.post("/api/estimates", async (req, res) => {
     try {
@@ -395,6 +420,19 @@ export async function registerRoutes(
         });
       }
 
+      // Log pricing history for each line item
+      if (items && items.length > 0) {
+        const pricingEntries = items.map((item: any) => ({
+          trade: item.phaseGroup || "other",
+          scopeKeyword: (item.scopeDescription || "").slice(0, 50),
+          subCost: item.subCost || 0,
+          city: estimateData.city || "",
+          source: (estimateData as any)._aiGenerated ? "ai_generated" : "user_edit",
+          estimateId: estimate.id,
+        }));
+        await storage.logPricing(pricingEntries).catch(() => {});
+      }
+
       res.json(estimate);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -482,6 +520,19 @@ export async function registerRoutes(
           timestamp: now,
           metadata: null,
         });
+      }
+
+      // Log pricing history for each line item
+      if (items && items.length > 0) {
+        const pricingEntries = items.map((item: any) => ({
+          trade: item.phaseGroup || "other",
+          scopeKeyword: (item.scopeDescription || "").slice(0, 50),
+          subCost: item.subCost || 0,
+          city: estimateData.city || "",
+          source: (estimateData as any)._aiGenerated ? "ai_generated" : "user_edit",
+          estimateId: id,
+        }));
+        await storage.logPricing(pricingEntries).catch(() => {});
       }
 
       res.json(estimate);
@@ -842,19 +893,139 @@ Return ONLY valid JSON in this exact format:
   "notesInternal": "internal notes"
 }`;
 
+  const AI_REWRITE_SYSTEM_PROMPT = `You are the estimating AI for 1 Degree Construction. You are editing an EXISTING estimate.
+
+CRITICAL: All costs are SUB COSTS (what we pay the subcontractor). The system auto-applies 100% markup.
+
+=== REWRITE RULES (editing an existing estimate) ===
+1. ONLY change what the user explicitly asks to change
+2. Keep all unchanged line items EXACTLY as they are — same scope text, same prices
+3. Do not rephrase or reformat scope descriptions that weren't mentioned
+4. Do not adjust prices that weren't questioned
+5. If the user says "add X" — add it, keep everything else identical
+6. If the user says "change the price of X" — change only that price
+7. Return the COMPLETE estimate JSON (all line items, not just changes)
+
+Return ONLY valid JSON in this exact format:
+{
+  "clientName": "",
+  "clientEmail": "",
+  "clientPhone": "",
+  "projectAddress": "",
+  "city": "",
+  "state": "CA",
+  "zip": "",
+  "permitRequired": true/false,
+  "lineItems": [
+    {
+      "phaseGroup": "general_conditions|demolition|framing|mep|insulation_drywall_paint|tile_finish_carpentry|permit_design|planning|other",
+      "customPhaseLabel": "only if phaseGroup is other, otherwise null",
+      "scopeDescription": "detailed scope text with bullet points",
+      "subCost": number,
+      "isGrouped": true/false
+    }
+  ],
+  "milestones": [
+    { "milestoneName": "string", "amount": number }
+  ],
+  "notesInternal": "internal notes"
+}`;
+
   app.post("/api/ai/generate-estimate", async (req, res) => {
     try {
-      const { prompt } = req.body;
+      const { prompt, estimateId } = req.body;
       if (!prompt || typeof prompt !== "string") {
         return res.status(400).json({ error: "Prompt is required" });
+      }
+
+      const isEditMode = !!estimateId;
+      let existingEstimate: any = null;
+      let existingLineItems: any[] = [];
+      let aiLog = "";
+
+      // Fetch existing estimate context if editing
+      if (isEditMode) {
+        const id = parseInt(String(estimateId));
+        existingEstimate = await storage.getEstimate(id);
+        if (existingEstimate) {
+          existingLineItems = await storage.getLineItems(id);
+          aiLog = existingEstimate.aiLog || "";
+        }
+      }
+
+      // Gather relevant pricing history based on prompt keywords
+      let pricingContext = "";
+      try {
+        const tradeKeywords = ["demolition", "framing", "mep", "insulation_drywall_paint", "tile_finish_carpentry", "general_conditions", "permit_design"];
+        const mentionedTrades = tradeKeywords.filter(t =>
+          prompt.toLowerCase().includes(t.replace(/_/g, " ").split(" ")[0])
+        );
+        // Always include a few common trades
+        const tradesToQuery = Array.from(new Set([...mentionedTrades, "demolition", "mep"])).slice(0, 3);
+
+        const pricingRows: string[] = [];
+        for (const trade of tradesToQuery) {
+          const rows = await storage.getRecentPricing(trade, 5);
+          for (const row of rows) {
+            const dateStr = row.createdAt ? new Date(row.createdAt).toISOString().slice(0, 10) : "";
+            pricingRows.push(`${row.trade} | ${row.scopeKeyword} | $${row.subCost} | ${row.city || ""} | ${dateStr}`);
+          }
+        }
+
+        if (pricingRows.length > 0) {
+          const contextStr = pricingRows.slice(0, 8).join("\n");
+          // Keep under 500 chars
+          pricingContext = "\nRECENT PRICING DATA (from your actual projects):\n" + contextStr.slice(0, 450) + "\n";
+        }
+      } catch {
+        // pricing history lookup failure is non-fatal
+      }
+
+      // Build the final user prompt with injected context
+      let finalPrompt = prompt;
+      let systemPrompt = AI_SYSTEM_PROMPT;
+
+      if (isEditMode && existingEstimate) {
+        systemPrompt = AI_REWRITE_SYSTEM_PROMPT;
+
+        // Build compact existing line items context (50 chars per scope)
+        const compactItems = existingLineItems
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map(li => `${li.phaseGroup} | ${(li.scopeDescription || "").slice(0, 50)} | $${li.subCost}`)
+          .join("\n");
+
+        // Limit ai_log to last 500 chars
+        const recentLog = aiLog.length > 500 ? aiLog.slice(-500) : aiLog;
+
+        // Build context block, total capped at 2000 chars
+        let contextBlock = "";
+        contextBlock += "EXISTING ESTIMATE CONTEXT BELOW. Make MINIMAL changes — only modify what the user specifically asked to change. Keep all other line items, prices, and scope descriptions exactly as they are. Do not rewrite the entire estimate.\n\n";
+        contextBlock += `CLIENT: ${existingEstimate.clientName || ""} | ${existingEstimate.city || ""}\n`;
+        contextBlock += `CURRENT LINE ITEMS:\n${compactItems}\n`;
+        if (recentLog) {
+          contextBlock += `\nAI INTERACTION LOG (recent):\n${recentLog}\n`;
+        }
+        if (pricingContext) {
+          contextBlock += pricingContext;
+        }
+
+        // Cap total context at 2000 chars
+        contextBlock = contextBlock.slice(0, 2000);
+
+        finalPrompt = contextBlock + "\nUSER REQUEST: " + prompt;
+      } else {
+        // New estimate: just append pricing context to prompt
+        if (pricingContext) {
+          finalPrompt = pricingContext + "\n" + prompt;
+        }
       }
 
       const anthropic = new Anthropic();
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 4096,
-        messages: [{ role: "user", content: prompt }],
-        system: AI_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: finalPrompt }],
+        system: systemPrompt,
       });
 
       // Extract text content from the response
@@ -872,6 +1043,22 @@ Return ONLY valid JSON in this exact format:
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
+
+      // Append to ai_log if estimateId was provided
+      if (estimateId) {
+        try {
+          const id = parseInt(String(estimateId));
+          const now = new Date();
+          const dateStr = now.toISOString().slice(0, 10);
+          const timeStr = now.toTimeString().slice(0, 5);
+          const promptSummary = prompt.slice(0, 100);
+          const logEntry = `[${dateStr} ${timeStr}] GEN: ${promptSummary}\n`;
+          await storage.updateEstimateAiLog(id, logEntry);
+        } catch {
+          // non-fatal
+        }
+      }
+
       res.json(parsed);
     } catch (err: any) {
       console.error("AI generation error:", err);

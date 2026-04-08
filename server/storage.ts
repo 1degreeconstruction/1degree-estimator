@@ -5,11 +5,12 @@ import {
   type PaymentMilestone, type InsertMilestone, paymentMilestones,
   type EstimateEvent, type InsertEvent, estimateEvents,
   type User, type InsertUser, users,
+  type PricingHistory, pricingHistory,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "@shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -52,6 +53,13 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, updates: Partial<User>): Promise<User>;
   listUsers(): Promise<User[]>;
+
+  // Pricing History
+  logPricing(entries: Array<{trade: string; scopeKeyword: string; subCost: number; city?: string; source: string; estimateId?: number}>): Promise<void>;
+  getRecentPricing(trade: string, limit?: number): Promise<PricingHistory[]>;
+
+  // AI Log
+  updateEstimateAiLog(estimateId: number, logEntry: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -167,15 +175,60 @@ export class DatabaseStorage implements IStorage {
   async listUsers(): Promise<User[]> {
     return db.select().from(users).orderBy(desc(users.createdAt));
   }
+
+  // Pricing History
+  async logPricing(entries: Array<{trade: string; scopeKeyword: string; subCost: number; city?: string; source: string; estimateId?: number}>): Promise<void> {
+    if (entries.length === 0) return;
+    await db.insert(pricingHistory).values(entries.map(e => ({
+      trade: e.trade,
+      scopeKeyword: e.scopeKeyword.slice(0, 50),
+      subCost: e.subCost,
+      city: e.city || null,
+      source: e.source,
+      estimateId: e.estimateId || null,
+      createdAt: new Date(),
+    })));
+  }
+
+  async getRecentPricing(trade: string, limit = 10): Promise<PricingHistory[]> {
+    return db.select().from(pricingHistory)
+      .where(eq(pricingHistory.trade, trade))
+      .orderBy(desc(pricingHistory.createdAt))
+      .limit(limit);
+  }
+
+  // AI Log
+  async updateEstimateAiLog(estimateId: number, logEntry: string): Promise<void> {
+    const existing = await this.getEstimate(estimateId);
+    if (!existing) return;
+    const currentLog = existing.aiLog || "";
+    const newLog = currentLog + logEntry;
+    await db.update(estimates).set({ aiLog: newLog }).where(eq(estimates.id, estimateId));
+  }
 }
 
 export const storage = new DatabaseStorage();
 
-// Initialize DB: add created_by_user_id column if missing
+// Initialize DB: add columns/tables if missing
 async function initializeDb() {
   try {
     await pool.query(`
       ALTER TABLE estimates ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER REFERENCES users(id);
+    `);
+    await pool.query(`
+      ALTER TABLE estimates ADD COLUMN IF NOT EXISTS ai_log TEXT;
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS pricing_history (
+        id SERIAL PRIMARY KEY,
+        trade TEXT NOT NULL,
+        scope_keyword TEXT NOT NULL,
+        sub_cost REAL NOT NULL,
+        city TEXT,
+        source TEXT NOT NULL DEFAULT 'user_edit',
+        estimate_id INTEGER,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
     `);
     console.log("DB initialization complete.");
   } catch (err) {

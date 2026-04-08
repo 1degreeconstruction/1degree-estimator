@@ -68,7 +68,11 @@ export default function EstimateForm() {
   // AI generation mutation
   const aiMutation = useMutation({
     mutationFn: async (prompt: string) => {
-      const res = await apiRequest("POST", "/api/ai/generate-estimate", { prompt });
+      const body: Record<string, any> = { prompt };
+      if (isEditing && params.id) {
+        body.estimateId = params.id;
+      }
+      const res = await apiRequest("POST", "/api/ai/generate-estimate", body);
       return res.json();
     },
     onSuccess: (data: any) => {
