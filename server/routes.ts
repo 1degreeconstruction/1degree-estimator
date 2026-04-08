@@ -191,11 +191,13 @@ export async function registerRoutes(
   // Apply requireAuth to all /api/* routes except the public ones
   app.use("/api", (req, res, next) => {
     // Public routes — no auth needed
+    // req.path inside app.use("/api") is relative — "/api" prefix is stripped
     const publicRoutes = [
-      { method: "GET", pattern: /^\/api\/estimates\/public\// },
-      { method: "POST", pattern: /^\/api\/estimates\/public\/.*\/sign$/ },
-      { method: "GET", pattern: /^\/api\/reviews$/ },
-      { method: "GET", pattern: /^\/api\/places\// },
+      { method: "GET", pattern: /^\/estimates\/public\// },
+      { method: "POST", pattern: /^\/estimates\/public\/.*\/sign$/ },
+      { method: "GET", pattern: /^\/reviews$/ },
+      { method: "GET", pattern: /^\/places\// },
+      { method: "GET", pattern: /^\/sales-reps$/ },
     ];
 
     for (const route of publicRoutes) {
