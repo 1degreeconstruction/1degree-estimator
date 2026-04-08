@@ -479,7 +479,7 @@ export default function ClientEstimate() {
             </Card>
           )}
 
-          {/* Inclusions / Exclusions (collapsed) */}
+          {/* Inclusions / Exclusions / Terms & Conditions (collapsed) */}
           <div className="no-print mb-8 space-y-2">
             <Collapsible>
               <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground w-full justify-between py-2" data-testid="toggle-inclusions">
@@ -488,12 +488,41 @@ export default function ClientEstimate() {
               </CollapsibleTrigger>
               <CollapsibleContent className="pt-2" data-testid="content-inclusions">
                 <Card className="bg-white dark:bg-card">
-                  <CardContent className="pt-4 text-sm text-muted-foreground space-y-1">
-                    <p>• All labor and materials as described in scope above</p>
-                    <p>• Standard project management and site supervision</p>
-                    <p>• Cleanup and debris removal</p>
-                    <p>• Final walkthrough and punch list completion</p>
-                    {estimate.permitRequired && <p>• Permit filing and processing</p>}
+                  <CardContent className="pt-4 text-sm text-muted-foreground space-y-4">
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Labor</p>
+                      <p>All labor necessary to complete the scope of work, including:</p>
+                      <p>• Demolition, framing, rough plumbing, rough electrical, drywall, insulation, and structural work as needed.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Labor Standards</p>
+                      <p>All work will be performed to standard General Contractor (GC) grade labor expectations unless explicitly stated otherwise.</p>
+                      <p className="mt-1">For example:</p>
+                      <p>• Countertop installation includes prefab 9x2 or 10x2 countertops, pre-finished and sealed from the factory. Custom slab fabrication and finishing are excluded.</p>
+                      <p>• Tile installation includes standard ceramic tile (12x24 or larger), excluding small-format or mosaic tile layouts.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Rough Construction Materials</p>
+                      <p>• Framing materials: Lumber (e.g., 2x4s), screws, nails, plates, and brackets.</p>
+                      <p>• Drywall, insulation (to code), texture compounds, and taping materials.</p>
+                      <p>• Concrete or base materials for structural needs.</p>
+                      <p>• Waterproofing systems in wet areas, such as floating cement and membranes.</p>
+                      <p>• Electrical rough-in: Wiring, junction boxes, panels, outlets, switches, and GC-grade recessed LED lights.</p>
+                      <p>• Plumbing rough-in: Supply lines, drain lines, and in-wall components (excluding finish-grade valves or fixtures).</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Painting</p>
+                      <p>Includes GC-grade paint for walls and ceilings.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Site Preparation</p>
+                      <p>• Dust protection, floor coverings, and debris management to minimize disruption to the home.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Cleanup</p>
+                      <p>• Broom-clean condition at the end of the project.</p>
+                      <p>• Haul-away of demolition and construction debris.</p>
+                    </div>
                   </CardContent>
                 </Card>
               </CollapsibleContent>
@@ -506,12 +535,98 @@ export default function ClientEstimate() {
               </CollapsibleTrigger>
               <CollapsibleContent className="pt-2" data-testid="content-exclusions">
                 <Card className="bg-white dark:bg-card">
-                  <CardContent className="pt-4 text-sm text-muted-foreground space-y-1">
-                    <p>• Furniture, fixtures, and equipment (FF&E) unless noted</p>
-                    <p>• Appliance procurement unless noted</p>
-                    <p>• Work outside the specified scope</p>
-                    <p>• Hazardous material abatement if discovered</p>
-                    <p>• Changes to structural elements not included in scope</p>
+                  <CardContent className="pt-4 text-sm text-muted-foreground space-y-4">
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Finished Materials and Labor</p>
+                      <p>• Countertops: Fabrication of custom slabs (marble, granite, quartz) and specialty finishes.</p>
+                      <p>• Plumbing Fixtures: Faucets, showerheads, drains, tub fillers, and visible fixtures.</p>
+                      <p>• Electrical Fixtures: Decorative sconces, pendants, and other lighting.</p>
+                      <p>• Vanities and cabinetry beyond standard GC-grade options.</p>
+                      <p>• Doors, door frames, and associated hardware.</p>
+                      <p>• Tiles and flooring materials (e.g., grout, mortar, decorative blends, mosaics).</p>
+                      <p>• Mirrors, bathroom accessories (e.g., towel bars, robe hooks).</p>
+                      <p>• Appliances and their installation.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Upgrades and Specialty Features</p>
+                      <p>• Utility upgrades: Electrical panels, water or gas supply lines beyond existing walls.</p>
+                      <p>• Custom finishes: Niches, mosaic tiles, or hand-cut designs.</p>
+                      <p>• Specialty HVAC work, duct cleaning, or upgrades.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Additional Services</p>
+                      <p>• Hazardous material testing, removal, or remediation (e.g., asbestos, lead, mold).</p>
+                      <p>• Design, engineering, or 3D rendering services.</p>
+                      <p>• Permits, city fees, and inspection costs.</p>
+                      <p>• Structural repairs outside the stated scope of work.</p>
+                      <p>• Work outside wall surfaces (e.g., siding, external utilities).</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </CollapsibleContent>
+            </Collapsible>
+
+            <Collapsible>
+              <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground w-full justify-between py-2" data-testid="toggle-terms">
+                Standard Terms & Conditions
+                <ChevronDown className="w-4 h-4" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-2" data-testid="content-terms">
+                <Card className="bg-white dark:bg-card">
+                  <CardContent className="pt-4 text-sm text-muted-foreground space-y-4">
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">1. Standard of Care</p>
+                      <p>All work will comply with the approved plans, industry standards, and applicable codes. In case of a conflict, the Home Improvement Construction Agreement (HIC) and Addendum take precedence.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">2. Cost of Work</p>
+                      <p>Prices are valid for forty-five (45) days. After this period, the Contractor reserves the right to adjust pricing through a detailed change order.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">3. Pre-existing Conditions and Scope Gaps</p>
+                      <p>The Contractor is not responsible for addressing pre-existing deficiencies or missing details outside the defined scope of work. Repairs for unforeseen conditions such as dry rot, termite damage, or water damage require a signed change order.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Cancellation of Line Items</p>
+                      <p>The client agrees to a 30% liquidation fee for canceling or removing any line item or portion of the project after the standard three-day cancellation period. This fee applies to:</p>
+                      <p className="mt-1 font-medium text-foreground">Labor and Materials</p>
+                      <p>Labor and materials are based on GC-grade performance. For example:</p>
+                      <p>• Tile labor includes standard ceramic tile installation, but specialty patterns, mosaics, or hand-cut tiles require additional charges.</p>
+                      <p>• Countertop labor includes prefab 9x2 or 10x2 slabs that are pre-finished and sealed from the factory. Custom slab fabrication or full-size slab installation is excluded unless explicitly agreed upon.</p>
+                      <p>• Electrical labor includes basic wiring and recessed lighting but excludes decorative fixtures or specialty controls (e.g., smart home systems).</p>
+                      <p>• Plumbing labor includes rough-in supply and drain lines but excludes wall-hung units or custom valve setups.</p>
+                      <p>Changes requiring upgrades beyond GC-grade standards will incur a change order and additional fees.</p>
+                      <p className="mt-1 font-medium text-foreground">Project Scheduling and Resources</p>
+                      <p>Cancellations impact project timelines and resource allocation. The liquidation fee compensates for scheduling disruptions, resource commitment, and lost opportunities.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">4. Change Orders</p>
+                      <p>All change orders must be signed via DocuSign or wet signature before work begins. Verbal agreements will not be honored.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">5. Warranty Provisions</p>
+                      <p>A one-year limited workmanship warranty is provided, excluding:</p>
+                      <p>• Misuse, neglect, abuse, acts of God, or normal wear and tear.</p>
+                      <p>• Alterations by third parties void the warranty.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">6. Jobsite Access and Safety</p>
+                      <p>The client must ensure safe working conditions. Delays due to access or safety issues require resolution and may incur additional costs.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">7. Lien Rights</p>
+                      <p>The Contractor reserves the right to issue a lien for unpaid invoices beyond thirty (30) days.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">8. Force Majeure</p>
+                      <p>The Contractor is not liable for delays caused by uncontrollable events such as natural disasters or supply chain disruptions.</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground mb-1">Clarifications</p>
+                      <p>• Material Variations: Natural materials may exhibit variations in color, texture, or aging due to environmental factors.</p>
+                      <p>• Concrete Cracks: Minor cracking in concrete due to settlement is common and not covered under warranty.</p>
+                      <p>• Tile and Pattern Matching: Custom patterns or blends require client oversight. Additional charges apply for mosaic or small-format tile installations.</p>
+                    </div>
                   </CardContent>
                 </Card>
               </CollapsibleContent>
