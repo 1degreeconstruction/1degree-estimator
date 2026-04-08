@@ -3,5 +3,7 @@ dist/
 .env
 *.db
 *.sqlite
-drizzle/migrations/
 .DS_Store
+drizzle/migrations/
+screenshot*.png
+screenshot*.jpg
