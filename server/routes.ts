@@ -74,6 +74,9 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   // CORS — must be before other middleware
+  // Trust Render's proxy for secure cookies
+  app.set("trust proxy", 1);
+
   app.use(cors({
     origin: process.env.FRONTEND_URL || "https://1degree-estimator.vercel.app",
     credentials: true,
