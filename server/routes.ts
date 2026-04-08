@@ -858,12 +858,38 @@ HVAC (LABOR ONLY — equipment separate):
 
 === PAYMENT SCHEDULE RULES ===
 - Always top-heavy (front-load payments)
-- First milestone is always "Deposit upon acceptance" — amount should be lesser of $1,000 or 10% of total CLIENT price (which is subCost * 2 + 3% allowance)
-- Remaining milestones based on construction phases
-- Milestone amounts must sum to total CLIENT price (remember: the system doubles your sub costs and adds 3%)
+- First milestone is always "Deposit upon acceptance" — amount should be lesser of $1,000 or 10% of total CLIENT price
 - Calculate: totalClientPrice = (sum of all subCosts * 2) * 1.03
 - Then set deposit = min(1000, totalClientPrice * 0.10)
-- Distribute remaining (totalClientPrice - deposit) across 2-3 milestones, front-loaded
+
+PROGRESS PAYMENTS:
+- Break payments down by actual construction phases — NOT lumped together
+- Each major phase gets its own milestone. Examples:
+  • Deposit upon acceptance
+  • Completion of Demolition
+  • Completion of Framing
+  • Completion of MEP (Mechanical, Electrical, Plumbing)
+  • Completion of Insulation, Drywall & Paint
+  • Completion of Tile & Finish Carpentry
+  • Final Walkthrough & Project Closeout (Retention)
+- For smaller projects with fewer phases, combine logically but never lump more than 2 phases into one payment
+- Payment schedule should be top-heavy: earlier milestones should be larger amounts
+
+ROUND NUMBERS RULE:
+- All progress payment amounts MUST be clean, round numbers for easy invoicing
+- Round to the nearest $500 for payments over $5,000 (e.g., $12,500 not $12,347)
+- Round to the nearest $100 for payments under $5,000 (e.g., $3,200 not $3,187)
+- Put ALL the leftover "ugly" cents/dollars into the final retention payment ONLY
+- The retention payment is the ONLY one that can have non-round numbers
+
+RETENTION (FINAL PAYMENT) RULE:
+- Default: 10% of total client price
+- Maximum: 15% of total client price
+- If rounding the progress payments pushes retention above 15%, split the excess between the last two payments
+- Label the final milestone as: "Final Walkthrough & Project Closeout (10% Retention)" or similar
+- Retention is released upon substantial completion — not held for punch list items
+
+Milestone amounts MUST sum to exactly totalClientPrice. The retention absorbs all rounding differences.
 
 === SCOPE WRITING RULES ===
 - Write scope descriptions in bullet point format using bullet character •
