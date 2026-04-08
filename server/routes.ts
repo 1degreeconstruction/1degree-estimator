@@ -5,10 +5,8 @@ import { format, addDays } from "date-fns";
 import Anthropic from "@anthropic-ai/sdk";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import session from "express-session";
-import cookieParser from "cookie-parser";
 import cors from "cors";
-import MemoryStore from "memorystore";
+import jwt from "jsonwebtoken";
 import type { User } from "@shared/schema";
 
 // Extend Express Request to include user
@@ -28,7 +26,7 @@ declare global {
   }
 }
 
-const MemoryStoreSession = MemoryStore(session);
+const JWT_SECRET = process.env.SESSION_SECRET || "dev-secret-1degree";
 
 const PRE_APPROVED_EMAILS: Record<string, string> = {
   "1degreeconstruction@gmail.com": "admin",
@@ -37,15 +35,41 @@ const PRE_APPROVED_EMAILS: Record<string, string> = {
   "oliver@1degreeconstruction.com": "admin",
 };
 
-// Auth middleware
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) return next();
-  return res.status(401).json({ error: "Unauthorized" });
+// JWT Auth middleware
+async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const token = authHeader.slice(7);
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as { userId: number; email: string; role: string };
+    const user = await storage.getUser(payload.userId);
+    if (!user || !user.isActive) return res.status(401).json({ error: "Unauthorized" });
+    req.user = user as Express.User;
+    return next();
+  } catch {
+    return res.status(401).json({ error: "Invalid token" });
+  }
 }
 
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated() && req.user?.role === "admin") return next();
-  return res.status(403).json({ error: "Forbidden" });
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const token = authHeader.slice(7);
+  try {
+    const payload = jwt.verify(token, JWT_SECRET) as { userId: number; email: string; role: string };
+    const user = await storage.getUser(payload.userId);
+    if (!user || !user.isActive || user.role !== "admin") {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    req.user = user as Express.User;
+    return next();
+  } catch {
+    return res.status(403).json({ error: "Forbidden" });
+  }
 }
 
 function generateUniqueId(): string {
@@ -75,7 +99,6 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   // CORS — must be before other middleware
-  // Trust Render's proxy for secure cookies
   app.set("trust proxy", 1);
 
   app.use(cors({
@@ -83,42 +106,8 @@ export async function registerRoutes(
     credentials: true,
   }));
 
-  // Cookie parser
-  app.use(cookieParser());
-
-  // Session
-  app.use(session({
-    secret: process.env.SESSION_SECRET || "dev-secret-1degree",
-    resave: false,
-    saveUninitialized: false,
-    store: new MemoryStoreSession({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    }),
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    },
-  }));
-
-  // Passport
+  // Passport (no session — just for Google OAuth handshake)
   app.use(passport.initialize());
-  app.use(passport.session());
-
-  // Serialize/Deserialize user
-  passport.serializeUser((user: Express.User, done) => {
-    done(null, user.id);
-  });
-
-  passport.deserializeUser(async (id: number, done) => {
-    try {
-      const user = await storage.getUser(id);
-      done(null, user || false);
-    } catch (err) {
-      done(err);
-    }
-  });
 
   // Google OAuth Strategy
   passport.use(new GoogleStrategy(
@@ -170,10 +159,11 @@ export async function registerRoutes(
 
   app.get("/auth/google", passport.authenticate("google", {
     scope: ["profile", "email"],
+    session: false,
   }));
 
   app.get("/auth/google/callback",
-    passport.authenticate("google", { failureRedirect: "/login" }),
+    passport.authenticate("google", { failureRedirect: "/login", session: false }),
     (req, res) => {
       const user = req.user as Express.User;
       const frontendUrl = process.env.FRONTEND_URL || "https://1degree-estimator.vercel.app";
@@ -182,24 +172,19 @@ export async function registerRoutes(
         return res.redirect(`${frontendUrl}/#/?error=pending_approval`);
       }
 
-      return res.redirect(frontendUrl);
+      // Issue a JWT valid for 7 days
+      const token = jwt.sign(
+        { userId: user.id, email: user.email, role: user.role },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      return res.redirect(`${frontendUrl}/#/auth/callback?token=${token}`);
     }
   );
 
-  app.get("/auth/me", (req, res) => {
-    if (!req.isAuthenticated() || !req.user) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
+  app.get("/auth/me", requireAuth as any, (req, res) => {
     return res.json(req.user);
-  });
-
-  app.post("/auth/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) return res.status(500).json({ error: "Logout failed" });
-      req.session.destroy(() => {
-        res.json({ success: true });
-      });
-    });
   });
 
   // --- API Auth Middleware ---
@@ -218,7 +203,7 @@ export async function registerRoutes(
       }
     }
 
-    return requireAuth(req, res, next);
+    return (requireAuth as any)(req, res, next);
   });
 
   // Sales Reps
@@ -579,7 +564,7 @@ export async function registerRoutes(
   });
 
   // Admin routes
-  app.get("/api/admin/users", requireAdmin, async (_req, res) => {
+  app.get("/api/admin/users", requireAdmin as any, async (_req, res) => {
     try {
       const usersList = await storage.listUsers();
       res.json(usersList);
@@ -588,7 +573,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/admin/users/:id/approve", requireAdmin, async (req, res) => {
+  app.patch("/api/admin/users/:id/approve", requireAdmin as any, async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
       const user = await storage.updateUser(id, { isActive: true });
@@ -598,7 +583,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/admin/users/:id/role", requireAdmin, async (req, res) => {
+  app.patch("/api/admin/users/:id/role", requireAdmin as any, async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
       const { role } = req.body;
@@ -612,7 +597,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
+  app.delete("/api/admin/users/:id", requireAdmin as any, async (req, res) => {
     try {
       const id = parseInt(String(req.params.id));
       const user = await storage.updateUser(id, { isActive: false });

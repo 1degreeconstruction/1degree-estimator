@@ -1,6 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getToken, clearToken } from "@/lib/auth";
 
-const BACKEND_URL = "https://onedegree-estimator.onrender.com";
+const BACKEND_URL = import.meta.env.PROD
+  ? "https://onedegree-estimator.onrender.com"
+  : "";
 
 export interface AuthUser {
   id: number;
@@ -15,8 +18,11 @@ export interface AuthUser {
 }
 
 async function fetchMe(): Promise<AuthUser | null> {
+  const token = getToken();
+  if (!token) return null;
+
   const res = await fetch(`${BACKEND_URL}/auth/me`, {
-    credentials: "include",
+    headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) return null;
   if (!res.ok) return null;
@@ -33,24 +39,17 @@ export function useAuth() {
     retry: false,
   });
 
-  const logoutMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Logout failed");
-    },
-    onSuccess: () => {
-      queryClient.setQueryData(["auth", "me"], null);
-      queryClient.invalidateQueries({ queryKey: ["auth"] });
-    },
-  });
+  function logout() {
+    clearToken();
+    queryClient.setQueryData(["auth", "me"], null);
+    queryClient.invalidateQueries({ queryKey: ["auth"] });
+    window.location.hash = "/login";
+  }
 
   return {
     user: user ?? null,
     isLoading,
-    isAuthenticated: !!user,
-    logout: () => logoutMutation.mutate(),
+    isAuthenticated: !!user && !!getToken(),
+    logout,
   };
 }

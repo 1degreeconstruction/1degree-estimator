@@ -13,6 +13,7 @@ import ClientEstimate from "@/pages/client-estimate";
 import ClientConfirmation from "@/pages/client-confirmation";
 import Login from "@/pages/login";
 import AdminUsers from "@/pages/admin-users";
+import AuthCallback from "@/pages/auth-callback";
 import { useAuth } from "@/hooks/use-auth";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -41,6 +42,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 function AppRouter() {
   return (
     <Switch>
+      {/* Auth callback — captures JWT from Google OAuth redirect */}
+      <Route path="/auth/callback" component={AuthCallback} />
+
       {/* Public client-facing routes — no auth required */}
       <Route path="/estimate/:uniqueId" component={ClientEstimate} />
       <Route path="/estimate/:uniqueId/confirmation" component={ClientConfirmation} />
