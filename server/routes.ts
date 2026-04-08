@@ -326,6 +326,125 @@ export async function registerRoutes(
     }
   });
 
+  // Pricing Assistant Chat
+  app.post("/api/pricing-chat", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { message, conversationHistory = [] } = req.body;
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({ error: "message is required" });
+      }
+
+      // Gather all recent pricing history (up to 100 rows)
+      const pricingRows = await storage.getAllRecentPricing(100);
+      const pricingContext = pricingRows.length > 0
+        ? pricingRows.map(r => {
+            const date = r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : "unknown";
+            return `${r.trade} | ${r.scopeKeyword} | $${r.subCost} | ${r.city || ""} | ${r.source} | ${date}`;
+          }).join("\n")
+        : "No pricing history available yet.";
+
+      // Gather recent 20 projects
+      const allEstimates = await storage.getEstimates();
+      const recentEstimates = allEstimates.slice(0, 20);
+      const projectContext = recentEstimates.length > 0
+        ? recentEstimates.map(e => {
+            const date = e.createdAt ? new Date(e.createdAt).toISOString().slice(0, 10) : "unknown";
+            return `#${e.estimateNumber} | ${e.clientName} | ${e.projectAddress}, ${e.city} | $${e.totalSubCost?.toFixed(0) || 0} sub | ${e.status} | ${date}`;
+          }).join("\n")
+        : "No projects available yet.";
+
+      const systemPrompt = `You are the pricing assistant for 1 Degree Construction. You have access to the company's historical pricing database and project records.
+
+Your job:
+- Answer questions about past pricing on specific projects
+- Compare costs across trades, projects, and time periods
+- Help the estimator understand cost trends
+- Suggest pricing for new work based on historical data
+
+PRICING DATA (from completed projects):
+${pricingContext}
+
+PROJECT LIST:
+${projectContext}
+
+RULES:
+1. Always cite which project/date your numbers come from
+2. If you don't have data for something, say so — don't guess
+3. Keep responses concise and direct
+4. If the user asks to UPDATE or CHANGE a price in the database, respond with your recommendation but include a JSON block at the END of your message in this exact format:
+   ===PROPOSED_CHANGE===
+   {"trade": "...", "scopeKeyword": "...", "subCost": ..., "city": "...", "reason": "..."}
+   ===END_CHANGE===
+5. NEVER propose changes unless the user explicitly asks to update/change/set a price
+6. Only ONE change at a time — never batch updates
+7. Changes must be reasonable — never more than 50% different from the most recent price for that trade unless the user provides clear justification`;
+
+      // Keep last 10 messages of conversation history
+      const trimmedHistory = conversationHistory.slice(-10);
+
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        system: systemPrompt,
+        messages: [
+          ...trimmedHistory.map((m: { role: string; content: string }) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })),
+          { role: "user", content: message },
+        ],
+      });
+
+      const rawReply = response.content[0].type === "text" ? response.content[0].text : "";
+
+      // Parse proposed change if present
+      let proposedChange: { trade: string; scopeKeyword: string; subCost: number; city: string; reason: string } | undefined;
+      let reply = rawReply;
+
+      const changeMatch = rawReply.match(/===PROPOSED_CHANGE===([\/\S\s]*?)===END_CHANGE===/m);
+      if (changeMatch) {
+        try {
+          proposedChange = JSON.parse(changeMatch[1].trim());
+          // Remove the block from the displayed reply
+          reply = rawReply.replace(/===PROPOSED_CHANGE===([\/\S\s]*?)===END_CHANGE===/m, "").trim();
+        } catch {
+          // If parse fails, leave reply as-is
+        }
+      }
+
+      res.json({ reply, proposedChange });
+    } catch (err: any) {
+      console.error("Pricing chat error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Manual pricing history update (admin or estimator)
+  app.post("/api/pricing-history/update", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user;
+      if (!user || (user.role !== "admin" && user.role !== "estimator")) {
+        return res.status(403).json({ error: "Forbidden: admin or estimator role required" });
+      }
+      const { trade, scopeKeyword, subCost, city, reason } = req.body;
+      if (!trade || !scopeKeyword || subCost === undefined) {
+        return res.status(400).json({ error: "trade, scopeKeyword, and subCost are required" });
+      }
+      await storage.logPricing([{
+        trade,
+        scopeKeyword,
+        subCost: Number(subCost),
+        city: city || undefined,
+        source: "manual_update",
+      }]);
+      res.json({ success: true, message: `Pricing updated: ${trade} / ${scopeKeyword} = $${subCost}${reason ? ` (${reason})` : ""}` });
+    } catch (err: any) {
+      console.error("Pricing update error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Create estimate
   app.post("/api/estimates", async (req, res) => {
     try {

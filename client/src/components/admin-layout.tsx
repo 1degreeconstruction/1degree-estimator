@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useTheme } from "./theme-provider";
-import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X, Users, LogOut } from "lucide-react";
+import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X, Users, LogOut, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useState } from "react";
@@ -22,6 +22,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
 
   const isAdmin = user?.role === "admin";
+  const canUsePricingAssistant = user?.role === "admin" || user?.role === "estimator";
 
   const getInitials = (name: string) =>
     name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
@@ -29,6 +30,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const NAV_ITEMS = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/estimates/new", label: "New Estimate", icon: Plus },
+    ...(canUsePricingAssistant ? [{ href: "/pricing", label: "Pricing Assistant", icon: MessageSquare }] : []),
     ...(isAdmin ? [{ href: "/admin/users", label: "Team", icon: Users }] : []),
   ];
 

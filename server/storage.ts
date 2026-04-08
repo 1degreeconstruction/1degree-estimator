@@ -57,6 +57,7 @@ export interface IStorage {
   // Pricing History
   logPricing(entries: Array<{trade: string; scopeKeyword: string; subCost: number; city?: string; source: string; estimateId?: number}>): Promise<void>;
   getRecentPricing(trade: string, limit?: number): Promise<PricingHistory[]>;
+  getAllRecentPricing(limit?: number): Promise<PricingHistory[]>;
 
   // AI Log
   updateEstimateAiLog(estimateId: number, logEntry: string): Promise<void>;
@@ -193,6 +194,12 @@ export class DatabaseStorage implements IStorage {
   async getRecentPricing(trade: string, limit = 10): Promise<PricingHistory[]> {
     return db.select().from(pricingHistory)
       .where(eq(pricingHistory.trade, trade))
+      .orderBy(desc(pricingHistory.createdAt))
+      .limit(limit);
+  }
+
+  async getAllRecentPricing(limit = 100): Promise<PricingHistory[]> {
+    return db.select().from(pricingHistory)
       .orderBy(desc(pricingHistory.createdAt))
       .limit(limit);
   }

@@ -15,6 +15,7 @@ import ClientConfirmation from "@/pages/client-confirmation";
 import Login from "@/pages/login";
 import AdminUsers from "@/pages/admin-users";
 import AuthCallback from "@/pages/auth-callback";
+import PricingChat from "@/pages/pricing-chat";
 import { useAuth } from "@/hooks/use-auth";
 import { setToken } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -84,6 +85,13 @@ function AppRouter() {
         {() => (
           <AuthGuard>
             <AdminUsers />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/pricing">
+        {() => (
+          <AuthGuard>
+            <PricingChat />
           </AuthGuard>
         )}
       </Route>
