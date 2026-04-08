@@ -819,7 +819,7 @@ Return ONLY valid JSON in this exact format:
 
       const anthropic = new Anthropic();
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-20250514",
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
         system: AI_SYSTEM_PROMPT,
