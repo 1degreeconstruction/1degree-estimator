@@ -63,7 +63,8 @@ export function AddressAutocomplete({
     let cancelled = false;
     setIsLoading(true);
 
-    fetch(`/api/places/autocomplete?input=${encodeURIComponent(debouncedValue)}`)
+    const apiBase = import.meta.env.PROD ? "https://onedegree-estimator.onrender.com" : "";
+    fetch(`${apiBase}/api/places/autocomplete?input=${encodeURIComponent(debouncedValue)}`)
       .then(r => r.json())
       .then((data: { predictions: Prediction[] }) => {
         if (cancelled) return;
