@@ -97,56 +97,18 @@ export function AddressAutocomplete({
   }, []);
 
   const selectPrediction = useCallback(async (prediction: Prediction) => {
-    // Show the full description in the address field while we fetch details
-    onChange(prediction.structured_formatting?.main_text || prediction.description);
+    // CA API returns address components directly — no detail call needed
+    const addr = (prediction as any).address || prediction.description.split(",")[0] || "";
+    onChange(addr);
     setOpen(false);
     setPredictions([]);
 
-    try {
-      const res = await fetch(`/api/places/detail?place_id=${encodeURIComponent(prediction.place_id)}`);
-      const data = await res.json();
-
-      if (!data.result?.address_components) {
-        // Fallback: parse from the description string
-        const parts = prediction.description.split(", ");
-        onAddressSelect({
-          address: parts[0] || prediction.description,
-          city: parts[1] || "",
-          state: parts[2]?.split(" ")[0] || "",
-          zip: parts[2]?.split(" ")[1] || "",
-        });
-        return;
-      }
-
-      const components = data.result.address_components as Array<{
-        long_name: string;
-        short_name: string;
-        types: string[];
-      }>;
-
-      const get = (type: string, useShort = false) => {
-        const c = components.find(c => c.types.includes(type));
-        return c ? (useShort ? c.short_name : c.long_name) : "";
-      };
-
-      const streetNumber = get("street_number");
-      const route = get("route");
-      const address = [streetNumber, route].filter(Boolean).join(" ");
-      const city = get("locality") || get("sublocality") || get("neighborhood");
-      const state = get("administrative_area_level_1", true); // short name: "CA"
-      const zip = get("postal_code");
-
-      onAddressSelect({ address, city, state, zip });
-    } catch {
-      // If detail fetch fails, parse from prediction description
-      const parts = prediction.description.split(", ");
-      onAddressSelect({
-        address: parts[0] || prediction.description,
-        city: parts[1] || "",
-        state: parts[2]?.split(" ")[0] || "",
-        zip: parts[2]?.split(" ")[1] || "",
-      });
-    }
+    onAddressSelect({
+      address: (prediction as any).address || addr,
+      city: (prediction as any).city || "",
+      state: (prediction as any).state || "CA",
+      zip: (prediction as any).zip || "",
+    });
   }, [onChange, onAddressSelect]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {

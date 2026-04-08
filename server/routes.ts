@@ -664,37 +664,39 @@ export async function registerRoutes(
   });
 
   // Google Places Autocomplete proxy (no auth required for UX, key stays server-side)
+  // California address autocomplete via free data.ca.gov API
   app.get("/api/places/autocomplete", async (req, res) => {
     const input = (req.query.input as string) || "";
     if (!input || input.length < 3) return res.json({ predictions: [] });
 
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return res.json({ predictions: [] });
-
     try {
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&types=address&components=country:us&key=${apiKey}`;
-      const response = await fetch(url);
+      const parts = input.split(",").map(s => s.trim());
+      const addressPart = parts[0] || "";
+      const cityPart = parts[1] || "";
+
+      let sql = `SELECT "ADDRESS","CITY","ST","ZIP" FROM "00347528-9264-4259-a44d-b1b58f7cae78" WHERE "ADDRESS" ILIKE '${addressPart.replace(/'/g, "''")}%'`;
+      if (cityPart) {
+        sql += ` AND "CITY" ILIKE '${cityPart.replace(/'/g, "''")}%'`;
+      }
+      sql += ` LIMIT 8`;
+
+      const response = await fetch(
+        `https://data.ca.gov/api/3/action/datastore_search_sql?sql=${encodeURIComponent(sql)}`
+      );
       const data = await response.json() as any;
-      res.json({ predictions: data.predictions || [] });
+
+      const predictions = (data?.result?.records || []).map((r: any, i: number) => ({
+        place_id: `ca_${i}`,
+        description: `${r.ADDRESS}, ${r.CITY}, ${r.ST} ${r.ZIP}`,
+        address: r.ADDRESS,
+        city: r.CITY,
+        state: r.ST || "CA",
+        zip: r.ZIP,
+      }));
+
+      res.json({ predictions });
     } catch {
       res.json({ predictions: [] });
-    }
-  });
-
-  app.get("/api/places/detail", async (req, res) => {
-    const placeId = (req.query.place_id as string) || "";
-    if (!placeId) return res.json({});
-
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (!apiKey) return res.json({});
-
-    try {
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=address_components,formatted_address&key=${apiKey}`;
-      const response = await fetch(url);
-      const data = await response.json() as any;
-      res.json(data);
-    } catch {
-      res.json({});
     }
   });
 
