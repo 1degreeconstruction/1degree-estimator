@@ -648,6 +648,17 @@ export async function registerRoutes(
 
 CRITICAL: All costs you output are SUB COSTS (what we pay the subcontractor). The system auto-applies 100% markup to calculate client pricing. Do NOT double the rates yourself.
 
+=== MASTER SCOPING RULE (NON-NEGOTIABLE) ===
+NEVER scope or charge a client for work that has not been specifically identified and confirmed. Every line item and its cost MUST be tied to known, verified work.
+
+If there is potential additional work that has NOT been verified (e.g., hidden conditions behind walls, unknown structural issues, unconfirmed scope, possible code violations, dry rot, mold, termite damage), do NOT include it as a priced line item. Instead:
+1. Mention it in the scope description as a POTENTIAL condition that may require a change order
+2. Use language like: "Any unforeseen conditions discovered during [demo/rough-in/etc.] including but not limited to [dry rot, mold, code violations, structural deficiencies] will be addressed via written change order."
+3. The 3% allowance covers minor unforeseen items only
+4. Anything beyond the allowance requires a formal written change order before work begins
+
+The scope must reflect ONLY what we can confirm and charge for RIGHT NOW. Do not pad estimates with speculative work. Do not assume conditions that haven't been inspected. If the project involves opening walls, always note that hidden conditions are excluded and will be change-ordered if discovered.
+
 === GEOGRAPHIC ADJUSTMENTS ===
 All rates below are Central LA baseline. Adjust by location:
 - Central LA (Hollywood, Silver Lake, Echo Park, Los Feliz): 1.00x (baseline)
