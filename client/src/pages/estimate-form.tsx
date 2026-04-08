@@ -10,7 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatCurrency } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +21,7 @@ import { useState, useEffect, useMemo } from "react";
 
 interface LineItemForm {
   phaseGroup: string;
+  customPhaseLabel: string;
   scopeDescription: string;
   subCost: number;
   isGrouped: boolean;
@@ -57,8 +59,54 @@ export default function EstimateForm() {
   const [permitRequired, setPermitRequired] = useState(false);
   const [items, setItems] = useState<LineItemForm[]>([]);
   const [milestones, setMilestones] = useState<MilestoneForm[]>([]);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
 
   const { data: salesReps } = useQuery<SalesRep[]>({ queryKey: ["/api/sales-reps"] });
+
+  // AI generation mutation
+  const aiMutation = useMutation({
+    mutationFn: async (prompt: string) => {
+      const res = await apiRequest("POST", "/api/ai/generate-estimate", { prompt });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      // Populate all form fields from AI response
+      if (data.clientName) setClientName(data.clientName);
+      if (data.clientEmail) setClientEmail(data.clientEmail);
+      if (data.clientPhone) setClientPhone(data.clientPhone);
+      if (data.projectAddress) setProjectAddress(data.projectAddress);
+      if (data.city) setCity(data.city);
+      if (data.state) setState(data.state);
+      if (data.zip) setZip(data.zip);
+      if (typeof data.permitRequired === "boolean") setPermitRequired(data.permitRequired);
+      if (data.notesInternal) setNotesInternal(data.notesInternal);
+
+      if (data.lineItems && Array.isArray(data.lineItems)) {
+        setItems(data.lineItems.map((li: any, idx: number) => ({
+          phaseGroup: li.phaseGroup || "other",
+          customPhaseLabel: li.customPhaseLabel || "",
+          scopeDescription: li.scopeDescription || "",
+          subCost: li.subCost || 0,
+          isGrouped: li.isGrouped || false,
+          sortOrder: idx,
+        })));
+      }
+
+      if (data.milestones && Array.isArray(data.milestones)) {
+        setMilestones(data.milestones.map((m: any, idx: number) => ({
+          milestoneName: m.milestoneName || "",
+          amount: m.amount || 0,
+          sortOrder: idx,
+        })));
+      }
+
+      toast({ title: "Estimate generated", description: "Review and adjust before sending." });
+    },
+    onError: (err: any) => {
+      toast({ title: "AI Error", description: err.message || "Failed to generate estimate", variant: "destructive" });
+    },
+  });
 
   const { data: existingEstimate, isLoading: loadingEstimate } = useQuery<EstimateDetail>({
     queryKey: ["/api/estimates", params.id],
@@ -83,6 +131,7 @@ export default function EstimateForm() {
           .sort((a, b) => a.sortOrder - b.sortOrder)
           .map(li => ({
             phaseGroup: li.phaseGroup,
+            customPhaseLabel: (li as any).customPhaseLabel || "",
             scopeDescription: li.scopeDescription,
             subCost: li.subCost,
             isGrouped: li.isGrouped,
@@ -125,6 +174,7 @@ export default function EstimateForm() {
       ...prev,
       {
         phaseGroup: "general_conditions",
+        customPhaseLabel: "",
         scopeDescription: "",
         subCost: 0,
         isGrouped: false,
@@ -282,6 +332,49 @@ export default function EstimateForm() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left column - form fields */}
           <div className="lg:col-span-2 space-y-6">
+            {/* AI Assistant */}
+            {!isEditing && (
+              <Collapsible open={aiOpen} onOpenChange={setAiOpen}>
+                <Card className="border-primary/30 bg-gradient-to-r from-primary/5 to-transparent" data-testid="section-ai-assistant">
+                  <CollapsibleTrigger asChild>
+                    <CardHeader className="pb-4 cursor-pointer flex flex-row items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-primary" />
+                        <CardTitle className="text-sm font-semibold">AI Assistant</CardTitle>
+                      </div>
+                      {aiOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                    </CardHeader>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <CardContent className="space-y-3 pt-0">
+                      <p className="text-xs text-muted-foreground">
+                        Describe the project and AI will auto-populate the entire estimate form.
+                      </p>
+                      <Textarea
+                        value={aiPrompt}
+                        onChange={e => setAiPrompt(e.target.value)}
+                        placeholder="Describe the project... e.g., 'Full bathroom remodel at 456 Oak Ave, Encino for Sarah Chen. Demo, new layout, full MEP, tile, paint.'"
+                        rows={3}
+                        data-testid="input-ai-prompt"
+                      />
+                      <Button
+                        onClick={() => aiMutation.mutate(aiPrompt)}
+                        disabled={!aiPrompt.trim() || aiMutation.isPending}
+                        className="gap-2"
+                        data-testid="button-generate-estimate"
+                      >
+                        {aiMutation.isPending ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+                        ) : (
+                          <><Sparkles className="w-4 h-4" /> Generate Estimate</>
+                        )}
+                      </Button>
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            )}
+
             {/* Client Info */}
             <Card data-testid="section-client-info">
               <CardHeader className="pb-4">
@@ -378,6 +471,15 @@ export default function EstimateForm() {
                             </Button>
                           </div>
                         </div>
+                        {item.phaseGroup === "other" && (
+                          <Input
+                            placeholder="Custom phase name..."
+                            value={item.customPhaseLabel}
+                            onChange={e => updateLineItem(idx, "customPhaseLabel", e.target.value)}
+                            className="text-sm"
+                            data-testid={`input-custom-phase-${idx}`}
+                          />
+                        )}
                         <Textarea
                           placeholder="Scope description (client-facing)..."
                           value={item.scopeDescription}

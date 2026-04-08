@@ -14,7 +14,7 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-export function formatDate(dateStr: string): string {
+export function formatDate(dateStr: string | Date): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -22,7 +22,7 @@ export function formatDate(dateStr: string): string {
   });
 }
 
-export function formatDateTime(dateStr: string): string {
+export function formatDateTime(dateStr: string | Date): string {
   return new Date(dateStr).toLocaleString("en-US", {
     month: "short",
     day: "numeric",

@@ -1,4 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import logoWhite from "@/assets/logo-white.png";
+import logoDark from "@/assets/logo-dark.jpg";
 import { useParams, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,19 +11,21 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger
 } from "@/components/ui/collapsible";
-import { AlertCircle, Phone, Mail, ChevronDown, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Phone, Mail, ChevronDown, CheckCircle2, Download } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { PHASE_GROUPS, GROUPED_PHASES } from "@shared/schema";
 import type { Estimate, SalesRep, PaymentMilestone } from "@shared/schema";
 import { useState, useEffect } from "react";
 import { useForceLightMode } from "@/components/theme-provider";
+import { TrustCredentials } from "@/components/trust-credentials";
 
 type ClientLineItem = {
   id: number;
   estimateId: number;
   sortOrder: number;
   phaseGroup: string;
+  customPhaseLabel: string | null;
   scopeDescription: string;
   clientPrice: number;
   isGrouped: boolean;
@@ -33,17 +37,15 @@ type ClientEstimate = Omit<Estimate, "totalSubCost"> & {
   milestones: PaymentMilestone[];
 };
 
-function getPhaseLabel(value: string): string {
+function getPhaseLabel(value: string, customLabel?: string | null): string {
+  if (value === "other" && customLabel) return customLabel;
   return PHASE_GROUPS.find(p => p.value === value)?.label || value;
 }
 
 function Logo() {
   return (
     <div className="flex items-center gap-3">
-      <svg viewBox="0 0 40 40" width="40" height="40" fill="none" aria-label="1 Degree Construction">
-        <rect width="40" height="40" rx="8" fill="#E8960A" />
-        <text x="10" y="28" fontFamily="'Cabinet Grotesk', sans-serif" fontWeight="800" fontSize="22" fill="#fff">1°</text>
-      </svg>
+      <img src={logoDark} alt="1 Degree Construction" className="w-[60px] h-auto" />
       <div>
         <h1 className="font-display text-lg font-bold text-foreground leading-tight">1 Degree Construction</h1>
       </div>
@@ -51,6 +53,203 @@ function Logo() {
   );
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+   Topographic SVG pattern for cover page background
+   ──────────────────────────────────────────────────────────────────────────── */
+function TopographicPattern() {
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full opacity-[0.07]"
+      xmlns="http://www.w3.org/2000/svg"
+      preserveAspectRatio="xMidYMid slice"
+      viewBox="0 0 1200 800"
+    >
+      <g fill="none" stroke="#ffffff" strokeWidth="1">
+        {/* Layer 1 – large sweeping curves */}
+        <path d="M-50 200 Q200 120 400 220 T800 180 T1250 250" />
+        <path d="M-50 260 Q250 180 450 280 T850 240 T1250 310" />
+        <path d="M-50 340 Q180 280 380 340 T780 300 T1250 380" />
+
+        {/* Layer 2 */}
+        <path d="M-50 420 Q220 360 480 420 T900 380 T1250 460" />
+        <path d="M-50 480 Q260 420 500 490 T920 440 T1250 520" />
+        <path d="M-50 550 Q200 500 440 560 T860 510 T1250 590" />
+
+        {/* Layer 3 */}
+        <path d="M-50 620 Q240 570 500 630 T900 580 T1250 660" />
+        <path d="M-50 680 Q280 640 520 700 T920 650 T1250 720" />
+        <path d="M-50 740 Q220 700 460 750 T880 710 T1250 780" />
+
+        {/* Lighter accent curves */}
+        <path d="M-50 100 Q300 40 600 120 T1250 80" strokeWidth="0.5" />
+        <path d="M-50 160 Q280 100 560 170 T1250 140" strokeWidth="0.5" />
+        <path d="M200 0 Q260 160 400 300 T600 600 T700 800" strokeWidth="0.5" />
+        <path d="M600 0 Q640 120 700 280 T850 550 T900 800" strokeWidth="0.5" />
+        <path d="M1000 0 Q980 180 940 350 T1050 600 T1100 800" strokeWidth="0.5" />
+      </g>
+    </svg>
+  );
+}
+
+
+
+/* Small wordmark for letter page header */
+function WordmarkSmall() {
+  return (
+    <img src={logoDark} alt="1 Degree Construction" className="w-[60px] h-auto" />
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Animated scroll-down chevron
+   ──────────────────────────────────────────────────────────────────────────── */
+function ScrollIndicator() {
+  return (
+    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 animate-bounce-slow">
+      <span className="text-white/50 text-[11px] uppercase tracking-[0.2em] font-light" style={{ fontFamily: "'General Sans', sans-serif" }}>
+        Scroll
+      </span>
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-white/40">
+        <path d="M4 7 L10 13 L16 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Section 1: Cover Page
+   ──────────────────────────────────────────────────────────────────────────── */
+function CoverPage({ estimate }: { estimate: ClientEstimate }) {
+  const formattedDate = new Date(estimate.createdAt).toLocaleDateString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+  });
+
+  const fullAddress = `${estimate.projectAddress}, ${estimate.city}, ${estimate.state} ${estimate.zip}`;
+
+  return (
+    <section
+      className="relative min-h-screen flex flex-col overflow-hidden"
+      style={{ backgroundColor: "#2D2F2E" }}
+      data-testid="cover-page"
+    >
+      <TopographicPattern />
+
+      {/* Top-left: Project details */}
+      <div className="relative z-10 p-6 sm:p-10 pr-16 sm:pr-10 text-white text-[12px] sm:text-sm leading-relaxed max-w-[320px] sm:max-w-[360px]">
+        <p><span className="font-semibold">Project Address:</span> {fullAddress}</p>
+        <p><span className="font-semibold">Prepared By:</span> 1 Degree Construction</p>
+        <p><span className="font-semibold">Prepared For:</span> {estimate.clientName}</p>
+        <p><span className="font-semibold">Date:</span> {formattedDate}</p>
+      </div>
+
+      {/* Top-right: Rotated company address */}
+      <div
+        className="absolute top-6 right-6 sm:top-10 sm:right-10 z-10 text-white/60 text-[10px] sm:text-xs leading-snug"
+        style={{
+          writingMode: "vertical-rl",
+          transform: "rotate(180deg)",
+        }}
+      >
+        <p>13107 Ventura Blvd #206</p>
+        <p>Studio City CA 91604</p>
+      </div>
+
+      {/* Center: Logo and text */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 -mt-8">
+        <img src={logoWhite} alt="1 Degree Construction" className="w-[200px] h-auto mx-auto" />
+
+        <div className="text-center mt-6 sm:mt-8">
+          <p className="text-white/60 text-[11px] sm:text-xs tracking-wide mt-4 leading-relaxed" style={{ fontFamily: "'General Sans', sans-serif" }}>
+            General Contractor | Design-Build
+          </p>
+          <p className="text-white/60 text-[11px] sm:text-xs tracking-wide mt-0.5 leading-relaxed" style={{ fontFamily: "'General Sans', sans-serif" }}>
+            Remodel | ADU &amp; New Construction
+          </p>
+        </div>
+      </div>
+
+      {/* Bottom: Website and license */}
+      <div className="relative z-10 flex items-center justify-between px-6 sm:px-10 pb-16 sm:pb-10 text-white/50 text-[11px] sm:text-xs">
+        <span>www.1degreeconstruction.com</span>
+        <span>Lic. #1075129</span>
+      </div>
+
+      <ScrollIndicator />
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Section 2: Welcome Letter
+   ──────────────────────────────────────────────────────────────────────────── */
+function WelcomeLetter({ estimate }: { estimate: ClientEstimate }) {
+  const rep = estimate.salesRep;
+
+  return (
+    <section
+      className="relative min-h-screen bg-white flex flex-col"
+      data-testid="welcome-letter"
+    >
+      {/* Top-right wordmark */}
+      <div className="flex justify-end p-6 sm:p-10">
+        <WordmarkSmall />
+      </div>
+
+      {/* Letter body */}
+      <div className="flex-1 flex items-start justify-center px-6 sm:px-16 md:px-24 pb-12">
+        <div className="max-w-2xl w-full" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+          {/* Salutation */}
+          <p className="text-gray-900 text-base sm:text-lg leading-relaxed mb-10 sm:mb-12">
+            Dear {estimate.clientName},
+          </p>
+
+          {/* Body */}
+          <div className="text-gray-700 text-[15px] sm:text-base leading-[1.85] space-y-6">
+            <p>It was a pleasure to meet you.</p>
+
+            <p>
+              We want to extend our gratitude on behalf of 1 Degree Construction for considering us for your upcoming project.
+            </p>
+
+            <p>
+              We specialize in projects that prioritize functional living spaces while embracing innovative design concepts. Our approach involves understanding your vision for both practical use and aesthetic appeal. By doing so, we aim to establish a solid foundation for a successful partnership and to ultimately deliver the home you've always envisioned.
+            </p>
+
+            <p>
+              Should you decide to proceed with our services, I will be your primary point of contact. Please don't hesitate to reach out for any inquiries, comments, or feedback. Your satisfaction is our priority.
+            </p>
+
+            <p>
+              Thank you once again for considering 1 Degree Remodel. We look forward to the possibility of working together to bring your dream home to life.
+            </p>
+          </div>
+
+          {/* Sign-off */}
+          <div className="mt-10 sm:mt-14">
+            <p className="text-gray-700 text-[15px] sm:text-base mb-8" style={{ fontFamily: "'Lora', Georgia, serif" }}>
+              Sincerely,
+            </p>
+
+            {rep && (
+              <div className="text-gray-900 text-sm sm:text-[15px] leading-relaxed" style={{ fontFamily: "'General Sans', sans-serif" }}>
+                <p className="font-semibold">{rep.name}</p>
+                <p className="text-gray-600">{rep.title}</p>
+                <p className="text-gray-600">{rep.email}</p>
+                <p className="text-gray-600">{rep.phone}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Main Component
+   ──────────────────────────────────────────────────────────────────────────── */
 export default function ClientEstimate() {
   const params = useParams<{ uniqueId: string }>();
   const [, navigate] = useLocation();
@@ -119,14 +318,14 @@ export default function ClientEstimate() {
       const groupItems = sortedItems.filter(i => i.phaseGroup === item.phaseGroup);
       const totalPrice = groupItems.reduce((sum, i) => sum + i.clientPrice, 0);
       displaySections.push({
-        label: getPhaseLabel(item.phaseGroup),
+        label: getPhaseLabel(item.phaseGroup, item.customPhaseLabel),
         items: groupItems,
         collectivePrice: totalPrice,
       });
       processedPhases.add(item.phaseGroup);
     } else {
       displaySections.push({
-        label: getPhaseLabel(item.phaseGroup),
+        label: getPhaseLabel(item.phaseGroup, item.customPhaseLabel),
         items: [item],
         collectivePrice: null,
       });
@@ -138,256 +337,284 @@ export default function ClientEstimate() {
   const subtotal = sortedItems.reduce((sum, i) => sum + i.clientPrice, 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-background" data-testid="client-estimate-page">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        {/* Header */}
-        <div className="mb-8" data-testid="client-header">
-          <Logo />
-          <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <p className="text-sm text-muted-foreground">Estimate</p>
-              <p className="font-mono text-sm" data-testid="text-estimate-number">{estimate.estimateNumber}</p>
-            </div>
-            <div className="text-sm text-muted-foreground text-right">
-              <p>Date: {formatDate(estimate.createdAt)}</p>
-              <p>Valid Until: {formatDate(estimate.validUntil)}</p>
+    <>
+      {/* ── SECTION 1: Cover Page ─────────────────────────────────────────── */}
+      <div className="no-print">
+        <CoverPage estimate={estimate} />
+      </div>
+
+      {/* ── SECTION 2: Welcome Letter ─────────────────────────────────────── */}
+      <WelcomeLetter estimate={estimate} />
+
+      {/* ── SECTION 3: Trust & Credentials ─────────────────────────────────── */}
+      <div className="no-print">
+        <TrustCredentials salesRep={estimate.salesRep} />
+      </div>
+
+      {/* ── SECTION 4: Existing Estimate Content (unchanged) ──────────────── */}
+      <div className="min-h-screen bg-gray-50 dark:bg-background" data-testid="client-estimate-page">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+          {/* Header */}
+          <div className="mb-8" data-testid="client-header">
+            <Logo />
+            <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Estimate</p>
+                <p className="font-mono text-sm" data-testid="text-estimate-number">{estimate.estimateNumber}</p>
+              </div>
+              <div className="text-sm text-muted-foreground text-right">
+                <p>Date: {formatDate(estimate.createdAt)}</p>
+                <p>Valid Until: {formatDate(estimate.validUntil)}</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Sales Rep */}
-        {estimate.salesRep && (
-          <Card className="mb-6 bg-white dark:bg-card" data-testid="card-sales-rep">
+          {/* Sales Rep */}
+          {estimate.salesRep && (
+            <Card className="mb-6 bg-white dark:bg-card" data-testid="card-sales-rep">
+              <CardContent className="pt-5">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Your Contact</p>
+                <p className="font-semibold text-sm">{estimate.salesRep.name}</p>
+                <p className="text-sm text-muted-foreground">{estimate.salesRep.title}</p>
+                <div className="flex gap-4 mt-2 text-sm">
+                  <a href={`mailto:${estimate.salesRep.email}`} className="flex items-center gap-1 text-primary hover:underline">
+                    <Mail className="w-3 h-3" /> {estimate.salesRep.email}
+                  </a>
+                  <a href={`tel:${estimate.salesRep.phone}`} className="flex items-center gap-1 text-primary hover:underline">
+                    <Phone className="w-3 h-3" /> {estimate.salesRep.phone}
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Client Info */}
+          <Card className="mb-6 bg-white dark:bg-card" data-testid="card-client-info">
             <CardContent className="pt-5">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Your Contact</p>
-              <p className="font-semibold text-sm">{estimate.salesRep.name}</p>
-              <p className="text-sm text-muted-foreground">{estimate.salesRep.title}</p>
-              <div className="flex gap-4 mt-2 text-sm">
-                <a href={`mailto:${estimate.salesRep.email}`} className="flex items-center gap-1 text-primary hover:underline">
-                  <Mail className="w-3 h-3" /> {estimate.salesRep.email}
-                </a>
-                <a href={`tel:${estimate.salesRep.phone}`} className="flex items-center gap-1 text-primary hover:underline">
-                  <Phone className="w-3 h-3" /> {estimate.salesRep.phone}
-                </a>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Prepared For</p>
+              <p className="font-semibold text-sm" data-testid="text-client-name">{estimate.clientName}</p>
+              <p className="text-sm text-muted-foreground">
+                {estimate.projectAddress}, {estimate.city}, {estimate.state} {estimate.zip}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Scope of Work */}
+          <div className="mb-6" data-testid="scope-of-work">
+            <h2 className="font-display text-lg font-bold mb-4">Scope of Work</h2>
+            <div className="space-y-4">
+              {displaySections.map((section, idx) => (
+                <Card key={idx} className="bg-white dark:bg-card overflow-hidden" data-testid={`scope-section-${idx}`}>
+                  <div className="flex items-center justify-between p-4 bg-muted/30">
+                    <h3 className="font-semibold text-sm">{section.label}</h3>
+                    {section.collectivePrice !== null ? (
+                      <span className="font-mono text-sm font-semibold">{formatCurrency(section.collectivePrice)}</span>
+                    ) : (
+                      <span className="font-mono text-sm font-semibold">{formatCurrency(section.items[0].clientPrice)}</span>
+                    )}
+                  </div>
+                  <CardContent className="pt-3 pb-4">
+                    {section.items.map((item, itemIdx) => (
+                      <div key={item.id} className={`${itemIdx > 0 ? "mt-3 pt-3 border-t" : ""}`}>
+                        {section.items.length > 1 && (
+                          <p className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wider">
+                            {/* Show trade label for individual items within a group */}
+                            {item.scopeDescription.split("\n")[0]?.length < 50 ? "" : ""}
+                          </p>
+                        )}
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                          {item.scopeDescription}
+                        </p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Summary */}
+          <Card className="mb-6 bg-white dark:bg-card" data-testid="card-summary">
+            <CardContent className="pt-5 space-y-3">
+              <h2 className="font-display text-lg font-bold mb-4">Estimate Summary</h2>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-mono" data-testid="text-subtotal">{formatCurrency(subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <div>
+                  <span className="text-muted-foreground">3% Unforeseen Conditions Allowance</span>
+                </div>
+                <span className="font-mono" data-testid="text-allowance">{formatCurrency(estimate.allowanceAmount)}</span>
+              </div>
+              <p className="text-xs text-muted-foreground italic pl-0">
+                A 3% allowance of the total contract value is included as a budget for unforeseen conditions. Any unforeseen conditions that do not fit within this allowance will be addressed through a formal written change order.
+              </p>
+              <Separator />
+              <div className="flex justify-between font-semibold text-lg">
+                <span>Total</span>
+                <span className="font-mono text-primary" data-testid="text-total">{formatCurrency(estimate.totalClientPrice)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Deposit Due Upon Acceptance</span>
+                <span className="font-mono font-semibold" data-testid="text-deposit">{formatCurrency(estimate.depositAmount)}</span>
               </div>
             </CardContent>
           </Card>
-        )}
 
-        {/* Client Info */}
-        <Card className="mb-6 bg-white dark:bg-card" data-testid="card-client-info">
-          <CardContent className="pt-5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Prepared For</p>
-            <p className="font-semibold text-sm" data-testid="text-client-name">{estimate.clientName}</p>
-            <p className="text-sm text-muted-foreground">
-              {estimate.projectAddress}, {estimate.city}, {estimate.state} {estimate.zip}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Scope of Work */}
-        <div className="mb-6" data-testid="scope-of-work">
-          <h2 className="font-display text-lg font-bold mb-4">Scope of Work</h2>
-          <div className="space-y-4">
-            {displaySections.map((section, idx) => (
-              <Card key={idx} className="bg-white dark:bg-card overflow-hidden" data-testid={`scope-section-${idx}`}>
-                <div className="flex items-center justify-between p-4 bg-muted/30">
-                  <h3 className="font-semibold text-sm">{section.label}</h3>
-                  {section.collectivePrice !== null ? (
-                    <span className="font-mono text-sm font-semibold">{formatCurrency(section.collectivePrice)}</span>
-                  ) : (
-                    <span className="font-mono text-sm font-semibold">{formatCurrency(section.items[0].clientPrice)}</span>
-                  )}
-                </div>
-                <CardContent className="pt-3 pb-4">
-                  {section.items.map((item, itemIdx) => (
-                    <div key={item.id} className={`${itemIdx > 0 ? "mt-3 pt-3 border-t" : ""}`}>
-                      {section.items.length > 1 && (
-                        <p className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wider">
-                          {/* Show trade label for individual items within a group */}
-                          {item.scopeDescription.split("\n")[0]?.length < 50 ? "" : ""}
-                        </p>
-                      )}
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                        {item.scopeDescription}
-                      </p>
+          {/* Payment Schedule */}
+          {estimate.milestones.length > 0 && (
+            <Card className="mb-6 bg-white dark:bg-card" data-testid="card-payment-schedule">
+              <CardContent className="pt-5">
+                <h2 className="font-display text-lg font-bold mb-4">Payment Schedule</h2>
+                <div className="space-y-3">
+                  {estimate.milestones.sort((a, b) => a.sortOrder - b.sortOrder).map((m, idx) => (
+                    <div key={m.id} className="flex justify-between text-sm py-2 border-b last:border-0" data-testid={`payment-milestone-${idx}`}>
+                      <span>{m.milestoneName}</span>
+                      <span className="font-mono font-medium">{formatCurrency(m.amount)}</span>
                     </div>
                   ))}
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Inclusions / Exclusions (collapsed) */}
+          <div className="no-print mb-8 space-y-2">
+            <Collapsible>
+              <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground w-full justify-between py-2" data-testid="toggle-inclusions">
+                Inclusions
+                <ChevronDown className="w-4 h-4" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-2" data-testid="content-inclusions">
+                <Card className="bg-white dark:bg-card">
+                  <CardContent className="pt-4 text-sm text-muted-foreground space-y-1">
+                    <p>• All labor and materials as described in scope above</p>
+                    <p>• Standard project management and site supervision</p>
+                    <p>• Cleanup and debris removal</p>
+                    <p>• Final walkthrough and punch list completion</p>
+                    {estimate.permitRequired && <p>• Permit filing and processing</p>}
+                  </CardContent>
+                </Card>
+              </CollapsibleContent>
+            </Collapsible>
+
+            <Collapsible>
+              <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground w-full justify-between py-2" data-testid="toggle-exclusions">
+                Exclusions
+                <ChevronDown className="w-4 h-4" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-2" data-testid="content-exclusions">
+                <Card className="bg-white dark:bg-card">
+                  <CardContent className="pt-4 text-sm text-muted-foreground space-y-1">
+                    <p>• Furniture, fixtures, and equipment (FF&E) unless noted</p>
+                    <p>• Appliance procurement unless noted</p>
+                    <p>• Work outside the specified scope</p>
+                    <p>• Hazardous material abatement if discovered</p>
+                    <p>• Changes to structural elements not included in scope</p>
+                  </CardContent>
+                </Card>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
-        </div>
 
-        {/* Summary */}
-        <Card className="mb-6 bg-white dark:bg-card" data-testid="card-summary">
-          <CardContent className="pt-5 space-y-3">
-            <h2 className="font-display text-lg font-bold mb-4">Estimate Summary</h2>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span className="font-mono" data-testid="text-subtotal">{formatCurrency(subtotal)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <div>
-                <span className="text-muted-foreground">3% Unforeseen Conditions Allowance</span>
-              </div>
-              <span className="font-mono" data-testid="text-allowance">{formatCurrency(estimate.allowanceAmount)}</span>
-            </div>
-            <p className="text-xs text-muted-foreground italic pl-0">
-              A 3% allowance of the total contract value is included as a budget for unforeseen conditions. Any unforeseen conditions that do not fit within this allowance will be addressed through a formal written change order.
-            </p>
-            <Separator />
-            <div className="flex justify-between font-semibold text-lg">
-              <span>Total</span>
-              <span className="font-mono text-primary" data-testid="text-total">{formatCurrency(estimate.totalClientPrice)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Deposit Due Upon Acceptance</span>
-              <span className="font-mono font-semibold" data-testid="text-deposit">{formatCurrency(estimate.depositAmount)}</span>
-            </div>
-          </CardContent>
-        </Card>
+          {/* Download PDF link */}
+          <div className="no-print text-center mb-6">
+            <button
+              onClick={() => window.print()}
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              data-testid="button-download-pdf-client"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download PDF
+            </button>
+          </div>
 
-        {/* Payment Schedule */}
-        {estimate.milestones.length > 0 && (
-          <Card className="mb-6 bg-white dark:bg-card" data-testid="card-payment-schedule">
-            <CardContent className="pt-5">
-              <h2 className="font-display text-lg font-bold mb-4">Payment Schedule</h2>
-              <div className="space-y-3">
-                {estimate.milestones.sort((a, b) => a.sortOrder - b.sortOrder).map((m, idx) => (
-                  <div key={m.id} className="flex justify-between text-sm py-2 border-b last:border-0" data-testid={`payment-milestone-${idx}`}>
-                    <span>{m.milestoneName}</span>
-                    <span className="font-mono font-medium">{formatCurrency(m.amount)}</span>
+          {/* Accept & Sign */}
+          {!isApproved && !isExpired && (
+            <Card className="no-print bg-white dark:bg-card border-primary/20" data-testid="card-accept-sign">
+              <CardContent className="pt-6 space-y-4">
+                <h2 className="font-display text-lg font-bold">Accept & Sign</h2>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    checked={accepted}
+                    onCheckedChange={(v) => setAccepted(v === true)}
+                    data-testid="checkbox-accept"
+                  />
+                  <label className="text-sm leading-relaxed cursor-pointer" onClick={() => setAccepted(!accepted)}>
+                    I have reviewed this estimate and accept the scope of work, pricing, and payment terms as described above.
+                  </label>
+                </div>
+                {accepted && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">Type your full name to sign</label>
+                      <Input
+                        value={signatureName}
+                        onChange={e => setSignatureName(e.target.value)}
+                        placeholder="Full Name"
+                        className="max-w-sm"
+                        data-testid="input-signature"
+                      />
+                    </div>
+                    <Button
+                      onClick={() => signMutation.mutate()}
+                      disabled={!signatureName.trim() || signMutation.isPending}
+                      className="gap-2"
+                      data-testid="button-accept-sign"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      {signMutation.isPending ? "Signing..." : "Accept & Sign"}
+                    </Button>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-        {/* Inclusions / Exclusions (collapsed) */}
-        <div className="mb-8 space-y-2">
-          <Collapsible>
-            <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground w-full justify-between py-2" data-testid="toggle-inclusions">
-              Inclusions
-              <ChevronDown className="w-4 h-4" />
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-2" data-testid="content-inclusions">
-              <Card className="bg-white dark:bg-card">
-                <CardContent className="pt-4 text-sm text-muted-foreground space-y-1">
-                  <p>• All labor and materials as described in scope above</p>
-                  <p>• Standard project management and site supervision</p>
-                  <p>• Cleanup and debris removal</p>
-                  <p>• Final walkthrough and punch list completion</p>
-                  {estimate.permitRequired && <p>• Permit filing and processing</p>}
-                </CardContent>
-              </Card>
-            </CollapsibleContent>
-          </Collapsible>
-
-          <Collapsible>
-            <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground w-full justify-between py-2" data-testid="toggle-exclusions">
-              Exclusions
-              <ChevronDown className="w-4 h-4" />
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-2" data-testid="content-exclusions">
-              <Card className="bg-white dark:bg-card">
-                <CardContent className="pt-4 text-sm text-muted-foreground space-y-1">
-                  <p>• Furniture, fixtures, and equipment (FF&E) unless noted</p>
-                  <p>• Appliance procurement unless noted</p>
-                  <p>• Work outside the specified scope</p>
-                  <p>• Hazardous material abatement if discovered</p>
-                  <p>• Changes to structural elements not included in scope</p>
-                </CardContent>
-              </Card>
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
-
-        {/* Accept & Sign */}
-        {!isApproved && !isExpired && (
-          <Card className="bg-white dark:bg-card border-primary/20" data-testid="card-accept-sign">
-            <CardContent className="pt-6 space-y-4">
-              <h2 className="font-display text-lg font-bold">Accept & Sign</h2>
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  checked={accepted}
-                  onCheckedChange={(v) => setAccepted(v === true)}
-                  data-testid="checkbox-accept"
-                />
-                <label className="text-sm leading-relaxed cursor-pointer" onClick={() => setAccepted(!accepted)}>
-                  I have reviewed this estimate and accept the scope of work, pricing, and payment terms as described above.
-                </label>
-              </div>
-              {accepted && (
-                <div className="space-y-3">
+          {isApproved && (
+            <Card className="no-print bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800" data-testid="card-approved">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-green-600" />
                   <div>
-                    <label className="text-sm font-medium mb-1 block">Type your full name to sign</label>
-                    <Input
-                      value={signatureName}
-                      onChange={e => setSignatureName(e.target.value)}
-                      placeholder="Full Name"
-                      className="max-w-sm"
-                      data-testid="input-signature"
-                    />
+                    <p className="font-semibold text-green-800 dark:text-green-300">Estimate Approved</p>
+                    <p className="text-sm text-green-700 dark:text-green-400">
+                      Signed by {estimate.signatureName} on {estimate.signatureTimestamp ? formatDateTime(estimate.signatureTimestamp) : "N/A"}
+                    </p>
                   </div>
-                  <Button
-                    onClick={() => signMutation.mutate()}
-                    disabled={!signatureName.trim() || signMutation.isPending}
-                    className="gap-2"
-                    data-testid="button-accept-sign"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    {signMutation.isPending ? "Signing..." : "Accept & Sign"}
-                  </Button>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+              </CardContent>
+            </Card>
+          )}
 
-        {isApproved && (
-          <Card className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800" data-testid="card-approved">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-6 h-6 text-green-600" />
-                <div>
-                  <p className="font-semibold text-green-800 dark:text-green-300">Estimate Approved</p>
-                  <p className="text-sm text-green-700 dark:text-green-400">
-                    Signed by {estimate.signatureName} on {estimate.signatureTimestamp ? formatDateTime(estimate.signatureTimestamp) : "N/A"}
-                  </p>
+          {isExpired && !isApproved && (
+            <Card className="no-print bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800" data-testid="card-expired">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="w-6 h-6 text-red-600" />
+                  <div>
+                    <p className="font-semibold text-red-800 dark:text-red-300">Estimate Expired</p>
+                    <p className="text-sm text-red-700 dark:text-red-400">
+                      This estimate expired on {formatDate(estimate.validUntil)}. Please contact us for a new estimate.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              </CardContent>
+            </Card>
+          )}
 
-        {isExpired && !isApproved && (
-          <Card className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800" data-testid="card-expired">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="w-6 h-6 text-red-600" />
-                <div>
-                  <p className="font-semibold text-red-800 dark:text-red-300">Estimate Expired</p>
-                  <p className="text-sm text-red-700 dark:text-red-400">
-                    This estimate expired on {formatDate(estimate.validUntil)}. Please contact us for a new estimate.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Footer */}
-        <footer className="mt-12 pt-6 border-t text-center text-xs text-muted-foreground">
-          <p>© {new Date().getFullYear()} 1 Degree Construction. All rights reserved.</p>
-        </footer>
+          {/* Footer */}
+          <footer className="no-print mt-12 pt-6 border-t text-center text-xs text-muted-foreground">
+            <p>© {new Date().getFullYear()} 1 Degree Construction. All rights reserved.</p>
+          </footer>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
-function formatDateTime(dateStr: string): string {
+function formatDateTime(dateStr: string | Date): string {
   return new Date(dateStr).toLocaleString("en-US", {
     month: "short",
     day: "numeric",

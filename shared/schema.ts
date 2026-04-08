@@ -1,10 +1,10 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, real, boolean, serial, jsonb, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Sales Reps
-export const salesReps = sqliteTable("sales_reps", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const salesReps = pgTable("sales_reps", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull(),
   title: text("title").notNull(),
   email: text("email").notNull(),
@@ -16,8 +16,8 @@ export type InsertSalesRep = z.infer<typeof insertSalesRepSchema>;
 export type SalesRep = typeof salesReps.$inferSelect;
 
 // Estimates
-export const estimates = sqliteTable("estimates", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const estimates = pgTable("estimates", {
+  id: serial("id").primaryKey(),
   estimateNumber: text("estimate_number").notNull().unique(),
   clientName: text("client_name").notNull(),
   clientEmail: text("client_email").notNull(),
@@ -28,19 +28,19 @@ export const estimates = sqliteTable("estimates", {
   zip: text("zip").notNull(),
   salesRepId: integer("sales_rep_id").notNull(),
   status: text("status").notNull().default("draft"),
-  createdAt: text("created_at").notNull(),
-  sentAt: text("sent_at"),
-  viewedAt: text("viewed_at"),
-  approvedAt: text("approved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  sentAt: timestamp("sent_at"),
+  viewedAt: timestamp("viewed_at"),
+  approvedAt: timestamp("approved_at"),
   signatureName: text("signature_name"),
-  signatureTimestamp: text("signature_timestamp"),
+  signatureTimestamp: timestamp("signature_timestamp"),
   notesInternal: text("notes_internal"),
   validUntil: text("valid_until").notNull(),
   totalSubCost: real("total_sub_cost").notNull().default(0),
   totalClientPrice: real("total_client_price").notNull().default(0),
   allowanceAmount: real("allowance_amount").notNull().default(0),
   depositAmount: real("deposit_amount").notNull().default(0),
-  permitRequired: integer("permit_required", { mode: "boolean" }).notNull().default(false),
+  permitRequired: boolean("permit_required").notNull().default(false),
   uniqueId: text("unique_id").notNull().unique(),
 });
 
@@ -49,15 +49,16 @@ export type InsertEstimate = z.infer<typeof insertEstimateSchema>;
 export type Estimate = typeof estimates.$inferSelect;
 
 // Estimate Line Items
-export const lineItems = sqliteTable("line_items", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const lineItems = pgTable("line_items", {
+  id: serial("id").primaryKey(),
   estimateId: integer("estimate_id").notNull(),
   sortOrder: integer("sort_order").notNull(),
   phaseGroup: text("phase_group").notNull(),
+  customPhaseLabel: text("custom_phase_label"),
   scopeDescription: text("scope_description").notNull(),
   subCost: real("sub_cost").notNull(),
   clientPrice: real("client_price").notNull(),
-  isGrouped: integer("is_grouped", { mode: "boolean" }).notNull().default(false),
+  isGrouped: boolean("is_grouped").notNull().default(false),
 });
 
 export const insertLineItemSchema = createInsertSchema(lineItems).omit({ id: true });
@@ -65,8 +66,8 @@ export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
 export type LineItem = typeof lineItems.$inferSelect;
 
 // Payment Milestones
-export const paymentMilestones = sqliteTable("payment_milestones", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const paymentMilestones = pgTable("payment_milestones", {
+  id: serial("id").primaryKey(),
   estimateId: integer("estimate_id").notNull(),
   milestoneName: text("milestone_name").notNull(),
   amount: real("amount").notNull(),
@@ -78,17 +79,101 @@ export type InsertMilestone = z.infer<typeof insertMilestoneSchema>;
 export type PaymentMilestone = typeof paymentMilestones.$inferSelect;
 
 // Estimate Events
-export const estimateEvents = sqliteTable("estimate_events", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const estimateEvents = pgTable("estimate_events", {
+  id: serial("id").primaryKey(),
   estimateId: integer("estimate_id").notNull(),
   eventType: text("event_type").notNull(),
-  timestamp: text("timestamp").notNull(),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
   metadata: text("metadata"),
 });
 
 export const insertEventSchema = createInsertSchema(estimateEvents).omit({ id: true });
 export type InsertEvent = z.infer<typeof insertEventSchema>;
 export type EstimateEvent = typeof estimateEvents.$inferSelect;
+
+// Users (Google OAuth)
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  googleId: text("google_id").notNull().unique(),
+  email: text("email").notNull().unique(),
+  name: text("name").notNull(),
+  avatarUrl: text("avatar_url"),
+  role: text("role").notNull().default("estimator"), // admin | estimator | viewer
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+export const insertUserSchema = createInsertSchema(users).omit({ id: true });
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+
+// Contacts (shared client database)
+export const contacts = pgTable("contacts", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  zip: text("zip"),
+  notes: text("notes"),
+  createdByUserId: integer("created_by_user_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertContactSchema = createInsertSchema(contacts).omit({ id: true });
+export type InsertContact = z.infer<typeof insertContactSchema>;
+export type Contact = typeof contacts.$inferSelect;
+
+// Email Logs
+export const emailLogs = pgTable("email_logs", {
+  id: serial("id").primaryKey(),
+  estimateId: integer("estimate_id").notNull(),
+  sentByUserId: integer("sent_by_user_id"),
+  recipientEmail: text("recipient_email").notNull(),
+  subject: text("subject").notNull(),
+  bodyPreview: text("body_preview"),
+  gmailMessageId: text("gmail_message_id"),
+  emailType: text("email_type").notNull(), // estimate | follow_up_1 | follow_up_2 | confirmation
+  status: text("status").notNull().default("sent"), // sent | failed | bounced
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
+export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({ id: true });
+export type InsertEmailLog = z.infer<typeof insertEmailLogSchema>;
+export type EmailLog = typeof emailLogs.$inferSelect;
+
+// Activity Log (audit trail)
+export const activityLog = pgTable("activity_log", {
+  id: serial("id").primaryKey(),
+  estimateId: integer("estimate_id"),
+  userId: integer("user_id"),
+  action: text("action").notNull(), // created | edited | sent | viewed | signed | status_changed | note_added | email_sent
+  details: text("details"),
+  metadata: jsonb("metadata"),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+});
+
+export const insertActivitySchema = createInsertSchema(activityLog).omit({ id: true });
+export type InsertActivity = z.infer<typeof insertActivitySchema>;
+export type ActivityLog = typeof activityLog.$inferSelect;
+
+// Estimate Versions (snapshot on every edit)
+export const estimateVersions = pgTable("estimate_versions", {
+  id: serial("id").primaryKey(),
+  estimateId: integer("estimate_id").notNull(),
+  versionNumber: integer("version_number").notNull(),
+  snapshotJson: jsonb("snapshot_json").notNull(), // full estimate + line items + milestones
+  changedByUserId: integer("changed_by_user_id"),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+  changeSummary: text("change_summary"),
+});
+
+export const insertVersionSchema = createInsertSchema(estimateVersions).omit({ id: true });
+export type InsertVersion = z.infer<typeof insertVersionSchema>;
+export type EstimateVersion = typeof estimateVersions.$inferSelect;
 
 // Phase group constants
 export const PHASE_GROUPS = [
@@ -111,7 +196,11 @@ export const STATUS_OPTIONS = [
   { value: "viewed", label: "Viewed", color: "purple" },
   { value: "follow_up_1", label: "Follow Up 1", color: "orange" },
   { value: "follow_up_2", label: "Follow Up 2", color: "orange" },
+  { value: "internal_review", label: "Internal Review", color: "yellow" },
+  { value: "revised", label: "Revised", color: "blue" },
   { value: "approved", label: "Approved", color: "green" },
+  { value: "won", label: "Won", color: "green" },
+  { value: "lost", label: "Lost", color: "red" },
   { value: "expired", label: "Expired", color: "red" },
   { value: "declined", label: "Declined", color: "red" },
 ] as const;

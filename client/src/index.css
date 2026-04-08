@@ -219,3 +219,29 @@
     font-family: var(--font-display);
   }
 }
+
+/* Slow bounce animation for scroll indicator */
+@keyframes bounce-slow {
+  0%, 100% {
+    transform: translateY(0) translateX(-50%);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(8px) translateX(-50%);
+    opacity: 1;
+  }
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 2s ease-in-out infinite;
+}
+
+/* ── Print-specific styles for PDF export ───────────────────────────────── */
+@media print {
+  /* Hide non-essential elements when printing */
+  .no-print { display: none !important; }
+  /* Ensure page breaks work */
+  .print-break-before { page-break-before: always; }
+  /* Remove dark backgrounds for printing */
+  body { background: white !important; }
+}

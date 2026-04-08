@@ -5,185 +5,140 @@ import {
   type PaymentMilestone, type InsertMilestone, paymentMilestones,
   type EstimateEvent, type InsertEvent, estimateEvents,
 } from "@shared/schema";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import * as schema from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 
-const sqlite = new Database("data.db");
-sqlite.pragma("journal_mode = WAL");
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+});
 
-// Create tables
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS sales_reps (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    title TEXT NOT NULL,
-    email TEXT NOT NULL,
-    phone TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS estimates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    estimate_number TEXT NOT NULL UNIQUE,
-    client_name TEXT NOT NULL,
-    client_email TEXT NOT NULL,
-    client_phone TEXT NOT NULL,
-    project_address TEXT NOT NULL,
-    city TEXT NOT NULL,
-    state TEXT NOT NULL,
-    zip TEXT NOT NULL,
-    sales_rep_id INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'draft',
-    created_at TEXT NOT NULL,
-    sent_at TEXT,
-    viewed_at TEXT,
-    approved_at TEXT,
-    signature_name TEXT,
-    signature_timestamp TEXT,
-    notes_internal TEXT,
-    valid_until TEXT NOT NULL,
-    total_sub_cost REAL NOT NULL DEFAULT 0,
-    total_client_price REAL NOT NULL DEFAULT 0,
-    allowance_amount REAL NOT NULL DEFAULT 0,
-    deposit_amount REAL NOT NULL DEFAULT 0,
-    permit_required INTEGER NOT NULL DEFAULT 0,
-    unique_id TEXT NOT NULL UNIQUE
-  );
-  CREATE TABLE IF NOT EXISTS line_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    estimate_id INTEGER NOT NULL,
-    sort_order INTEGER NOT NULL,
-    phase_group TEXT NOT NULL,
-    scope_description TEXT NOT NULL,
-    sub_cost REAL NOT NULL,
-    client_price REAL NOT NULL,
-    is_grouped INTEGER NOT NULL DEFAULT 0
-  );
-  CREATE TABLE IF NOT EXISTS payment_milestones (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    estimate_id INTEGER NOT NULL,
-    milestone_name TEXT NOT NULL,
-    amount REAL NOT NULL,
-    sort_order INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS estimate_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    estimate_id INTEGER NOT NULL,
-    event_type TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    metadata TEXT
-  );
-`);
-
-export const db = drizzle(sqlite);
+export const db = drizzle(pool, { schema });
 
 export interface IStorage {
   // Sales Reps
-  getSalesReps(): SalesRep[];
-  getSalesRep(id: number): SalesRep | undefined;
-  createSalesRep(rep: InsertSalesRep): SalesRep;
-  
+  getSalesReps(): Promise<SalesRep[]>;
+  getSalesRep(id: number): Promise<SalesRep | undefined>;
+  createSalesRep(rep: InsertSalesRep): Promise<SalesRep>;
+
   // Estimates
-  getEstimates(): Estimate[];
-  getEstimate(id: number): Estimate | undefined;
-  getEstimateByUniqueId(uniqueId: string): Estimate | undefined;
-  createEstimate(estimate: InsertEstimate): Estimate;
-  updateEstimate(id: number, data: Partial<InsertEstimate>): Estimate | undefined;
-  
+  getEstimates(): Promise<Estimate[]>;
+  getEstimate(id: number): Promise<Estimate | undefined>;
+  getEstimateByUniqueId(uniqueId: string): Promise<Estimate | undefined>;
+  createEstimate(estimate: InsertEstimate): Promise<Estimate>;
+  updateEstimate(id: number, data: Partial<InsertEstimate>): Promise<Estimate | undefined>;
+
   // Line Items
-  getLineItems(estimateId: number): LineItem[];
-  createLineItem(item: InsertLineItem): LineItem;
-  deleteLineItemsByEstimate(estimateId: number): void;
-  
+  getLineItems(estimateId: number): Promise<LineItem[]>;
+  createLineItem(item: InsertLineItem): Promise<LineItem>;
+  deleteLineItemsByEstimate(estimateId: number): Promise<void>;
+
   // Payment Milestones
-  getMilestones(estimateId: number): PaymentMilestone[];
-  createMilestone(milestone: InsertMilestone): PaymentMilestone;
-  deleteMilestonesByEstimate(estimateId: number): void;
-  
+  getMilestones(estimateId: number): Promise<PaymentMilestone[]>;
+  createMilestone(milestone: InsertMilestone): Promise<PaymentMilestone>;
+  deleteMilestonesByEstimate(estimateId: number): Promise<void>;
+
   // Events
-  getEvents(estimateId: number): EstimateEvent[];
-  createEvent(event: InsertEvent): EstimateEvent;
+  getEvents(estimateId: number): Promise<EstimateEvent[]>;
+  createEvent(event: InsertEvent): Promise<EstimateEvent>;
 }
 
 export class DatabaseStorage implements IStorage {
   // Sales Reps
-  getSalesReps(): SalesRep[] {
-    return db.select().from(salesReps).all();
+  async getSalesReps(): Promise<SalesRep[]> {
+    return db.select().from(salesReps);
   }
-  
-  getSalesRep(id: number): SalesRep | undefined {
-    return db.select().from(salesReps).where(eq(salesReps.id, id)).get();
+
+  async getSalesRep(id: number): Promise<SalesRep | undefined> {
+    const rows = await db.select().from(salesReps).where(eq(salesReps.id, id));
+    return rows[0];
   }
-  
-  createSalesRep(rep: InsertSalesRep): SalesRep {
-    return db.insert(salesReps).values(rep).returning().get();
+
+  async createSalesRep(rep: InsertSalesRep): Promise<SalesRep> {
+    const rows = await db.insert(salesReps).values(rep).returning();
+    return rows[0];
   }
-  
+
   // Estimates
-  getEstimates(): Estimate[] {
-    return db.select().from(estimates).orderBy(desc(estimates.createdAt)).all();
+  async getEstimates(): Promise<Estimate[]> {
+    return db.select().from(estimates).orderBy(desc(estimates.createdAt));
   }
-  
-  getEstimate(id: number): Estimate | undefined {
-    return db.select().from(estimates).where(eq(estimates.id, id)).get();
+
+  async getEstimate(id: number): Promise<Estimate | undefined> {
+    const rows = await db.select().from(estimates).where(eq(estimates.id, id));
+    return rows[0];
   }
-  
-  getEstimateByUniqueId(uniqueId: string): Estimate | undefined {
-    return db.select().from(estimates).where(eq(estimates.uniqueId, uniqueId)).get();
+
+  async getEstimateByUniqueId(uniqueId: string): Promise<Estimate | undefined> {
+    const rows = await db.select().from(estimates).where(eq(estimates.uniqueId, uniqueId));
+    return rows[0];
   }
-  
-  createEstimate(estimate: InsertEstimate): Estimate {
-    return db.insert(estimates).values(estimate).returning().get();
+
+  async createEstimate(estimate: InsertEstimate): Promise<Estimate> {
+    const rows = await db.insert(estimates).values(estimate).returning();
+    return rows[0];
   }
-  
-  updateEstimate(id: number, data: Partial<InsertEstimate>): Estimate | undefined {
-    return db.update(estimates).set(data).where(eq(estimates.id, id)).returning().get();
+
+  async updateEstimate(id: number, data: Partial<InsertEstimate>): Promise<Estimate | undefined> {
+    const rows = await db.update(estimates).set(data).where(eq(estimates.id, id)).returning();
+    return rows[0];
   }
-  
+
   // Line Items
-  getLineItems(estimateId: number): LineItem[] {
-    return db.select().from(lineItems).where(eq(lineItems.estimateId, estimateId)).all();
+  async getLineItems(estimateId: number): Promise<LineItem[]> {
+    return db.select().from(lineItems).where(eq(lineItems.estimateId, estimateId));
   }
-  
-  createLineItem(item: InsertLineItem): LineItem {
-    return db.insert(lineItems).values(item).returning().get();
+
+  async createLineItem(item: InsertLineItem): Promise<LineItem> {
+    const rows = await db.insert(lineItems).values(item).returning();
+    return rows[0];
   }
-  
-  deleteLineItemsByEstimate(estimateId: number): void {
-    db.delete(lineItems).where(eq(lineItems.estimateId, estimateId)).run();
+
+  async deleteLineItemsByEstimate(estimateId: number): Promise<void> {
+    await db.delete(lineItems).where(eq(lineItems.estimateId, estimateId));
   }
-  
+
   // Payment Milestones
-  getMilestones(estimateId: number): PaymentMilestone[] {
-    return db.select().from(paymentMilestones).where(eq(paymentMilestones.estimateId, estimateId)).all();
+  async getMilestones(estimateId: number): Promise<PaymentMilestone[]> {
+    return db.select().from(paymentMilestones).where(eq(paymentMilestones.estimateId, estimateId));
   }
-  
-  createMilestone(milestone: InsertMilestone): PaymentMilestone {
-    return db.insert(paymentMilestones).values(milestone).returning().get();
+
+  async createMilestone(milestone: InsertMilestone): Promise<PaymentMilestone> {
+    const rows = await db.insert(paymentMilestones).values(milestone).returning();
+    return rows[0];
   }
-  
-  deleteMilestonesByEstimate(estimateId: number): void {
-    db.delete(paymentMilestones).where(eq(paymentMilestones.estimateId, estimateId)).run();
+
+  async deleteMilestonesByEstimate(estimateId: number): Promise<void> {
+    await db.delete(paymentMilestones).where(eq(paymentMilestones.estimateId, estimateId));
   }
-  
+
   // Events
-  getEvents(estimateId: number): EstimateEvent[] {
-    return db.select().from(estimateEvents).where(eq(estimateEvents.estimateId, estimateId)).all();
+  async getEvents(estimateId: number): Promise<EstimateEvent[]> {
+    return db.select().from(estimateEvents).where(eq(estimateEvents.estimateId, estimateId));
   }
-  
-  createEvent(event: InsertEvent): EstimateEvent {
-    return db.insert(estimateEvents).values(event).returning().get();
+
+  async createEvent(event: InsertEvent): Promise<EstimateEvent> {
+    const rows = await db.insert(estimateEvents).values(event).returning();
+    return rows[0];
   }
 }
 
 export const storage = new DatabaseStorage();
 
 // Seed sales reps on startup
-function seedSalesReps() {
-  const existing = storage.getSalesReps();
-  if (existing.length === 0) {
-    storage.createSalesRep({ name: "David Gaon", title: "Co-Founder", email: "david@1degreeconstruction.com", phone: "818-720-1753" });
-    storage.createSalesRep({ name: "Thai Gaon", title: "Co-Founder", email: "thai@1degreeconstruction.com", phone: "818-674-3373" });
-    storage.createSalesRep({ name: "Oliver Loshitzer", title: "Project Manager", email: "oliver@1degreeconstruction.com", phone: "310-808-3118" });
+async function seedSalesReps() {
+  try {
+    const existing = await storage.getSalesReps();
+    if (existing.length === 0) {
+      await storage.createSalesRep({ name: "David Gaon", title: "Co-Founder", email: "david@1degreeconstruction.com", phone: "818-720-1753" });
+      await storage.createSalesRep({ name: "Thai Gaon", title: "Co-Founder", email: "thai@1degreeconstruction.com", phone: "818-674-3373" });
+      await storage.createSalesRep({ name: "Oliver Loshitzer", title: "Project Manager", email: "oliver@1degreeconstruction.com", phone: "310-808-3118" });
+      console.log("Sales reps seeded.");
+    }
+  } catch (err) {
+    console.error("Seed error (DB may not be connected yet):", err);
   }
 }
 

@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Edit, ExternalLink, Copy, Send, ArrowLeft,
-  Clock, Eye, CheckCircle, AlertCircle, FileText
+  Clock, Eye, CheckCircle, AlertCircle, FileText, Download
 } from "lucide-react";
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getStatusLabel } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -23,7 +23,8 @@ type EstimateDetail = Estimate & {
   events: EstimateEvent[];
 };
 
-function getPhaseLabel(value: string): string {
+function getPhaseLabel(value: string, customLabel?: string | null): string {
+  if (value === "other" && customLabel) return customLabel;
   return PHASE_GROUPS.find(p => p.value === value)?.label || value;
 }
 
@@ -125,6 +126,23 @@ export default function EstimateDetailPage() {
             <Button variant="outline" size="sm" onClick={copyLink} className="gap-2" data-testid="button-copy-link">
               <Copy className="w-4 h-4" /> Copy Link
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              data-testid="button-download-pdf"
+              onClick={() => {
+                const printUrl = `${window.location.origin}${window.location.pathname}#/estimate/${estimate.uniqueId}`;
+                const printWindow = window.open(printUrl, '_blank');
+                if (printWindow) {
+                  printWindow.addEventListener('load', () => {
+                    setTimeout(() => printWindow.print(), 1000);
+                  });
+                }
+              }}
+            >
+              <Download className="w-4 h-4" /> Download PDF
+            </Button>
             <Link href={`/estimate/${estimate.uniqueId}`}>
               <Button variant="outline" size="sm" className="gap-2" data-testid="button-preview">
                 <ExternalLink className="w-4 h-4" /> Preview
@@ -200,7 +218,7 @@ export default function EstimateDetailPage() {
                       {sortedItems.map((item, idx) => (
                         <tr key={item.id} className="border-b last:border-0" data-testid={`row-line-item-${idx}`}>
                           <td className="py-3 pr-4 align-top">
-                            <span className="text-xs font-medium">{getPhaseLabel(item.phaseGroup)}</span>
+                            <span className="text-xs font-medium">{getPhaseLabel(item.phaseGroup, (item as any).customPhaseLabel)}</span>
                             {item.isGrouped && (
                               <span className="ml-1 text-xs text-primary">(grouped)</span>
                             )}
