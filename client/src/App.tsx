@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
@@ -15,6 +16,7 @@ import Login from "@/pages/login";
 import AdminUsers from "@/pages/admin-users";
 import AuthCallback from "@/pages/auth-callback";
 import { useAuth } from "@/hooks/use-auth";
+import { setToken } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -91,6 +93,22 @@ function AppRouter() {
 }
 
 function App() {
+  // Capture JWT token from auth callback URL before router mounts
+  // URL format: /#/auth/callback?token=<jwt>
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.includes('/auth/callback') && hash.includes('token=')) {
+      const search = hash.split('?')[1] || '';
+      const params = new URLSearchParams(search);
+      const token = params.get('token');
+      if (token) {
+        setToken(token);
+        // Clean the URL and redirect to dashboard
+        window.location.hash = '#/';
+      }
+    }
+  }, []);
+
   return (
     <ThemeProvider defaultTheme="dark">
       <QueryClientProvider client={queryClient}>
