@@ -352,7 +352,7 @@ export default function EstimateForm() {
           {/* Left column - form fields */}
           <div className="lg:col-span-2 space-y-6">
             {/* AI Assistant */}
-            {!isEditing && (
+            {(
               <Collapsible open={aiOpen} onOpenChange={setAiOpen}>
                 <Card className="border-primary/30 bg-gradient-to-r from-primary/5 to-transparent" data-testid="section-ai-assistant">
                   <CollapsibleTrigger asChild>
