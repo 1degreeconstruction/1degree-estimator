@@ -1,6 +1,10 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+// In production, call the Render backend directly for cookie/session support
+// In development, use the local dev server (same origin)
+const API_BASE = import.meta.env.PROD
+  ? "https://onedegree-estimator.onrender.com"
+  : "";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
