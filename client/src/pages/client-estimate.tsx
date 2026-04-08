@@ -479,6 +479,62 @@ export default function ClientEstimate() {
             </Card>
           )}
 
+          {/* Project-Specific Inclusions & Exclusions (visible by default) */}
+          {((estimate as any).projectInclusions || (estimate as any).projectExclusions) && (
+            <div className="mb-6 space-y-4" data-testid="project-inclusions-exclusions">
+              {(estimate as any).projectInclusions && (
+                <div
+                  className="border-l-4 border-primary/60 bg-white dark:bg-card rounded-r-lg overflow-hidden shadow-sm"
+                  data-testid="card-project-inclusions"
+                >
+                  <div className="px-4 py-3 bg-primary/5 border-b border-primary/10">
+                    <h3 className="font-semibold text-sm text-foreground">Project Inclusions</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Specific to this project</p>
+                  </div>
+                  <div className="px-4 py-4">
+                    <ul className="space-y-1.5">
+                      {(estimate as any).projectInclusions
+                        .split("\n")
+                        .map((line: string) => line.trim())
+                        .filter((line: string) => line.length > 0)
+                        .map((line: string, i: number) => (
+                          <li key={i} className="text-sm text-foreground/80 leading-relaxed">
+                            {line.startsWith("•") ? line : `• ${line}`}
+                          </li>
+                        ))
+                      }
+                    </ul>
+                  </div>
+                </div>
+              )}
+              {(estimate as any).projectExclusions && (
+                <div
+                  className="border-l-4 border-amber-500/60 bg-white dark:bg-card rounded-r-lg overflow-hidden shadow-sm"
+                  data-testid="card-project-exclusions"
+                >
+                  <div className="px-4 py-3 bg-amber-50 dark:bg-amber-900/10 border-b border-amber-200/50">
+                    <h3 className="font-semibold text-sm text-foreground">Project Exclusions</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Not included in this estimate</p>
+                  </div>
+                  <div className="px-4 py-4">
+                    <ul className="space-y-1.5">
+                      {(estimate as any).projectExclusions
+                        .split("\n")
+                        .map((line: string) => line.trim())
+                        .filter((line: string) => line.length > 0)
+                        .map((line: string, i: number) => (
+                          <li key={i} className="text-sm text-foreground/80 leading-relaxed">
+                            {line.startsWith("•") ? line : `• ${line}`}
+                          </li>
+                        ))
+                      }
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Inclusions / Exclusions / Terms & Conditions (collapsed) */}
           <div className="no-print mb-8 space-y-2">
             <Collapsible>

@@ -44,6 +44,8 @@ export const estimates = pgTable("estimates", {
   uniqueId: text("unique_id").notNull().unique(),
   createdByUserId: integer("created_by_user_id"),
   aiLog: text("ai_log"),
+  projectInclusions: text("project_inclusions"),
+  projectExclusions: text("project_exclusions"),
 });
 
 export const insertEstimateSchema = createInsertSchema(estimates).omit({ id: true });

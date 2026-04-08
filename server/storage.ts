@@ -219,6 +219,12 @@ async function initializeDb() {
       ALTER TABLE estimates ADD COLUMN IF NOT EXISTS ai_log TEXT;
     `);
     await pool.query(`
+      ALTER TABLE estimates ADD COLUMN IF NOT EXISTS project_inclusions TEXT;
+    `);
+    await pool.query(`
+      ALTER TABLE estimates ADD COLUMN IF NOT EXISTS project_exclusions TEXT;
+    `);
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS pricing_history (
         id SERIAL PRIMARY KEY,
         trade TEXT NOT NULL,

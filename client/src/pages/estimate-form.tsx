@@ -62,6 +62,8 @@ export default function EstimateForm() {
   const [milestones, setMilestones] = useState<MilestoneForm[]>([]);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiOpen, setAiOpen] = useState(false);
+  const [projectInclusions, setProjectInclusions] = useState("");
+  const [projectExclusions, setProjectExclusions] = useState("");
 
   const { data: salesReps } = useQuery<SalesRep[]>({ queryKey: ["/api/sales-reps"] });
 
@@ -86,6 +88,8 @@ export default function EstimateForm() {
       if (data.zip) setZip(data.zip);
       if (typeof data.permitRequired === "boolean") setPermitRequired(data.permitRequired);
       if (data.notesInternal) setNotesInternal(data.notesInternal);
+      if (data.projectInclusions !== undefined) setProjectInclusions(data.projectInclusions || "");
+      if (data.projectExclusions !== undefined) setProjectExclusions(data.projectExclusions || "");
 
       if (data.lineItems && Array.isArray(data.lineItems)) {
         setItems(data.lineItems.map((li: any, idx: number) => ({
@@ -130,6 +134,8 @@ export default function EstimateForm() {
       setZip(existingEstimate.zip);
       setSalesRepId(existingEstimate.salesRepId);
       setNotesInternal(existingEstimate.notesInternal || "");
+      setProjectInclusions((existingEstimate as any).projectInclusions || "");
+      setProjectExclusions((existingEstimate as any).projectExclusions || "");
       setPermitRequired(existingEstimate.permitRequired);
       setItems(
         existingEstimate.lineItems
@@ -255,6 +261,7 @@ export default function EstimateForm() {
         clientName, clientEmail, clientPhone,
         projectAddress, city, state, zip,
         salesRepId, notesInternal, permitRequired,
+        projectInclusions, projectExclusions,
         status,
         lineItems: items,
         milestones,
@@ -278,6 +285,7 @@ export default function EstimateForm() {
         clientName, clientEmail, clientPhone,
         projectAddress, city, state, zip,
         salesRepId, notesInternal, permitRequired,
+        projectInclusions, projectExclusions,
         status,
         lineItems: items,
         milestones,
@@ -547,6 +555,42 @@ export default function EstimateForm() {
                     ))}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Project Inclusions & Exclusions */}
+            <Card data-testid="section-project-inclusions-exclusions">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-sm font-semibold">Project-Specific Inclusions &amp; Exclusions</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  AI-generated for this project. Editable — shown on the client page above the standard company terms.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="projectInclusions">Project Inclusions</Label>
+                  <Textarea
+                    id="projectInclusions"
+                    value={projectInclusions}
+                    onChange={e => setProjectInclusions(e.target.value)}
+                    placeholder="• What is specifically included for this project..."
+                    rows={4}
+                    className="resize-y min-h-[100px]"
+                    data-testid="input-project-inclusions"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="projectExclusions">Project Exclusions</Label>
+                  <Textarea
+                    id="projectExclusions"
+                    value={projectExclusions}
+                    onChange={e => setProjectExclusions(e.target.value)}
+                    placeholder="• What is NOT included that the client might expect..."
+                    rows={4}
+                    className="resize-y min-h-[100px]"
+                    data-testid="input-project-exclusions"
+                  />
+                </div>
               </CardContent>
             </Card>
 

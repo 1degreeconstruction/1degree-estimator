@@ -367,6 +367,8 @@ export async function registerRoutes(
         depositAmount,
         permitRequired: estimateData.permitRequired || false,
         notesInternal: estimateData.notesInternal || null,
+        projectInclusions: estimateData.projectInclusions || null,
+        projectExclusions: estimateData.projectExclusions || null,
         sentAt: estimateData.status === "sent" ? now : null,
         viewedAt: null,
         approvedAt: null,
@@ -478,6 +480,8 @@ export async function registerRoutes(
         depositAmount,
         permitRequired: estimateData.permitRequired || false,
         notesInternal: estimateData.notesInternal || null,
+        projectInclusions: estimateData.projectInclusions !== undefined ? estimateData.projectInclusions : null,
+        projectExclusions: estimateData.projectExclusions !== undefined ? estimateData.projectExclusions : null,
         sentAt: isSending ? now : undefined,
       });
 
@@ -868,6 +872,25 @@ In notesInternal, include:
 - Geographic adjustment applied
 - Any scope assumptions made
 
+=== PROJECT-SPECIFIC INCLUSIONS & EXCLUSIONS ===
+For every estimate, generate project-specific inclusions and exclusions tailored to the actual scope of work. These are IN ADDITION to the company's standard inclusions/exclusions/terms which are always shown separately.
+
+Project Inclusions should list what IS specifically included for THIS project based on the scope. Be specific and clear. Examples:
+• Full demolition of existing bathroom including tile, fixtures, and drywall
+• New rough plumbing for relocated shower and vanity
+• Installation of client-supplied tile on shower walls and floor
+• GC-grade recessed LED lighting (6 fixtures)
+
+Project Exclusions should list what is NOT included that the client might expect or ask about for this type of project. Be proactive — anticipate questions. Examples:
+• Shower glass enclosure (client to source and coordinate separately)
+• Decorative light fixtures — GC-grade recessed LEDs included; decorative sconces, pendants by client
+• Heated flooring system
+• Custom tile patterns — straight lay included, herringbone/diagonal/mosaic excluded
+• Permit fees and inspection costs
+
+Format: One item per line, starting with bullet character •
+Learn from previous estimates — check pricing_history and existing estimates to see what inclusions/exclusions are commonly used for similar project types.
+
 Return ONLY valid JSON in this exact format:
 {
   "clientName": "",
@@ -878,6 +901,8 @@ Return ONLY valid JSON in this exact format:
   "state": "CA",
   "zip": "",
   "permitRequired": true/false,
+  "projectInclusions": "bullet-separated list of project-specific inclusions",
+  "projectExclusions": "bullet-separated list of project-specific exclusions",
   "lineItems": [
     {
       "phaseGroup": "general_conditions|demolition|framing|mep|insulation_drywall_paint|tile_finish_carpentry|permit_design|planning|other",
@@ -905,6 +930,25 @@ CRITICAL: All costs are SUB COSTS (what we pay the subcontractor). The system au
 5. If the user says "add X" — add it, keep everything else identical
 6. If the user says "change the price of X" — change only that price
 7. Return the COMPLETE estimate JSON (all line items, not just changes)
+8. Always return updated projectInclusions and projectExclusions (preserve existing ones unless specifically asked to change them)
+
+=== PROJECT-SPECIFIC INCLUSIONS & EXCLUSIONS ===
+For every estimate, generate project-specific inclusions and exclusions tailored to the actual scope of work. These are IN ADDITION to the company's standard inclusions/exclusions/terms which are always shown separately.
+
+Project Inclusions should list what IS specifically included for THIS project based on the scope. Be specific and clear. Examples:
+• Full demolition of existing bathroom including tile, fixtures, and drywall
+• New rough plumbing for relocated shower and vanity
+• Installation of client-supplied tile on shower walls and floor
+• GC-grade recessed LED lighting (6 fixtures)
+
+Project Exclusions should list what is NOT included that the client might expect or ask about for this type of project. Be proactive — anticipate questions. Examples:
+• Shower glass enclosure (client to source and coordinate separately)
+• Decorative light fixtures — GC-grade recessed LEDs included; decorative sconces, pendants by client
+• Heated flooring system
+• Custom tile patterns — straight lay included, herringbone/diagonal/mosaic excluded
+• Permit fees and inspection costs
+
+Format: One item per line, starting with bullet character •
 
 Return ONLY valid JSON in this exact format:
 {
@@ -916,6 +960,8 @@ Return ONLY valid JSON in this exact format:
   "state": "CA",
   "zip": "",
   "permitRequired": true/false,
+  "projectInclusions": "bullet-separated list of project-specific inclusions",
+  "projectExclusions": "bullet-separated list of project-specific exclusions",
   "lineItems": [
     {
       "phaseGroup": "general_conditions|demolition|framing|mep|insulation_drywall_paint|tile_finish_carpentry|permit_design|planning|other",
