@@ -64,7 +64,7 @@ export interface IStorage {
   listUsers(): Promise<User[]>;
 
   // Pricing History
-  logPricing(entries: Array<{trade: string; scopeKeyword: string; subCost: number; city?: string; source: string; estimateId?: number}>): Promise<void>;
+  logPricing(entries: Array<{trade: string; scopeKeyword: string; subCost: number; clientPrice?: number; markupRate?: number; city?: string; source: string; estimateId?: number; salesRepId?: number}>): Promise<void>;
   getRecentPricing(trade: string, limit?: number): Promise<PricingHistory[]>;
   getAllRecentPricing(limit?: number): Promise<PricingHistory[]>;
 
@@ -231,15 +231,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Pricing History
-  async logPricing(entries: Array<{trade: string; scopeKeyword: string; subCost: number; city?: string; source: string; estimateId?: number}>): Promise<void> {
+  async logPricing(entries: Array<{trade: string; scopeKeyword: string; subCost: number; clientPrice?: number; markupRate?: number; city?: string; source: string; estimateId?: number; salesRepId?: number}>): Promise<void> {
     if (entries.length === 0) return;
     await db.insert(pricingHistory).values(entries.map(e => ({
       trade: e.trade,
       scopeKeyword: e.scopeKeyword.slice(0, 50),
       subCost: e.subCost,
+      clientPrice: e.clientPrice ?? null,
+      markupRate: e.markupRate ?? null,
       city: e.city || null,
       source: e.source,
       estimateId: e.estimateId || null,
+      salesRepId: e.salesRepId ?? null,
       createdAt: new Date(),
     })));
   }

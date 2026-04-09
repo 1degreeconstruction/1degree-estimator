@@ -21,9 +21,12 @@ interface PricingEntry {
   trade: string;
   scopeKeyword: string;
   subCost: number;
+  clientPrice: number | null;
+  markupRate: number | null;
   city: string | null;
   source: string;
   estimateId: number | null;
+  salesRepId: number | null;
   createdAt: string;
 }
 
@@ -168,6 +171,12 @@ function PricingRow({ entry, editMode, onSaved }: RowProps) {
           </span>
         )}
       </td>
+      <td className="px-4 py-2.5 text-sm font-mono text-zinc-400">
+        {entry.clientPrice != null ? formatCurrency(entry.clientPrice) : <span className="text-zinc-600">—</span>}
+      </td>
+      <td className="px-4 py-2.5 text-sm font-mono text-zinc-400">
+        {entry.markupRate != null ? `${entry.markupRate}%` : <span className="text-zinc-600">—</span>}
+      </td>
       <td className="px-4 py-2.5 text-sm text-zinc-400">{entry.city || "—"}</td>
       <td className="px-4 py-2.5"><SourceBadge source={entry.source} /></td>
       <td className="px-4 py-2.5 text-xs">
@@ -248,6 +257,8 @@ function TradeSection({ group, editMode, searchQuery, defaultOpen }: TradeSectio
               <tr className="border-b border-zinc-800 bg-zinc-950">
                 <th className="px-4 py-2 text-xs text-zinc-500 font-medium">Scope</th>
                 <th className="px-4 py-2 text-xs text-zinc-500 font-medium">Sub Cost</th>
+                <th className="px-4 py-2 text-xs text-zinc-500 font-medium">Client Price</th>
+                <th className="px-4 py-2 text-xs text-zinc-500 font-medium">Markup</th>
                 <th className="px-4 py-2 text-xs text-zinc-500 font-medium">City</th>
                 <th className="px-4 py-2 text-xs text-zinc-500 font-medium">Source</th>
                 <th className="px-4 py-2 text-xs text-zinc-500 font-medium">Date</th>

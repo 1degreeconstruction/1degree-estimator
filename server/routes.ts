@@ -365,11 +365,13 @@ export async function registerRoutes(
   // Pricing History endpoints
   app.post("/api/pricing-history", async (req, res) => {
     try {
-      const { trade, scopeKeyword, subCost, city, estimateId } = req.body;
+      const { trade, scopeKeyword, subCost, city, estimateId, markupRate, salesRepId } = req.body;
       if (!trade || !scopeKeyword || subCost === undefined) {
         return res.status(400).json({ error: "trade, scopeKeyword, subCost are required" });
       }
-      await storage.logPricing([{ trade, scopeKeyword, subCost, city, source: "user_edit", estimateId }]);
+      const mr = typeof markupRate === "number" ? markupRate : 100;
+      const cp = Math.round(subCost * (1 + mr / 100) * 100) / 100;
+      await storage.logPricing([{ trade, scopeKeyword, subCost, clientPrice: cp, markupRate: mr, city, source: "user_edit", estimateId, salesRepId }]);
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -400,7 +402,9 @@ export async function registerRoutes(
       const pricingContext = pricingRows.length > 0
         ? pricingRows.map(r => {
             const date = r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : "unknown";
-            return `${r.trade} | ${r.scopeKeyword} | $${r.subCost} | ${r.city || ""} | ${r.source} | ${date}`;
+            const markup = r.markupRate != null ? `${r.markupRate}%` : "";
+            const cp = r.clientPrice != null ? `$${r.clientPrice}` : "";
+            return `${r.trade} | ${r.scopeKeyword} | sub:$${r.subCost} | client:${cp} | markup:${markup} | ${r.city || ""} | ${r.source} | ${date}`;
           }).join("\n")
         : "No pricing history available yet.";
 
@@ -521,14 +525,18 @@ RULES:
       if (!user || (user.role !== "admin" && user.role !== "estimator")) {
         return res.status(403).json({ error: "Forbidden: admin or estimator role required" });
       }
-      const { trade, scopeKeyword, subCost, city, reason } = req.body;
+      const { trade, scopeKeyword, subCost, city, reason, markupRate } = req.body;
       if (!trade || !scopeKeyword || subCost === undefined) {
         return res.status(400).json({ error: "trade, scopeKeyword, and subCost are required" });
       }
+      const mr = typeof markupRate === "number" ? markupRate : 100;
+      const cp = Math.round(Number(subCost) * (1 + mr / 100) * 100) / 100;
       await storage.logPricing([{
         trade,
         scopeKeyword,
         subCost: Number(subCost),
+        clientPrice: cp,
+        markupRate: mr,
         city: city || undefined,
         source: "manual_update",
       }]);
@@ -662,14 +670,17 @@ RULES:
           trade: item.phaseGroup || "other",
           scopeKeyword: (item.scopeDescription || "").slice(0, 50),
           subCost: item.subCost || 0,
+          clientPrice: Math.round((item.subCost || 0) * markupMultiplier * 100) / 100,
+          markupRate,
           city: estimateData.city || "",
           source: (estimateData as any)._aiGenerated ? "ai_generated" : "user_edit",
           estimateId: estimate.id,
+          salesRepId: estimateData.salesRepId || undefined,
         }));
         await storage.logPricing(pricingEntries).catch(() => {});
 
         // Also log breakdown-level pricing for grouped items
-        const breakdownEntries: Array<{ trade: string; scopeKeyword: string; subCost: number; city?: string; source: string; estimateId?: number }> = [];
+        const breakdownEntries: Array<{ trade: string; scopeKeyword: string; subCost: number; clientPrice?: number; markupRate?: number; city?: string; source: string; estimateId?: number; salesRepId?: number }> = [];
         for (const item of items) {
           if (item.isGrouped && item.breakdowns && item.breakdowns.length > 0) {
             for (const bd of item.breakdowns) {
@@ -678,9 +689,12 @@ RULES:
                   trade: bd.tradeName,
                   scopeKeyword: item.phaseGroup || "other",
                   subCost: bd.subCost,
+                  clientPrice: Math.round(bd.subCost * markupMultiplier * 100) / 100,
+                  markupRate,
                   city: estimateData.city || "",
                   source: "breakdown_manual",
                   estimateId: estimate.id,
+                  salesRepId: estimateData.salesRepId || undefined,
                 });
               }
             }
@@ -804,14 +818,17 @@ RULES:
           trade: item.phaseGroup || "other",
           scopeKeyword: (item.scopeDescription || "").slice(0, 50),
           subCost: item.subCost || 0,
+          clientPrice: Math.round((item.subCost || 0) * markupMultiplier * 100) / 100,
+          markupRate,
           city: estimateData.city || "",
           source: (estimateData as any)._aiGenerated ? "ai_generated" : "user_edit",
           estimateId: id,
+          salesRepId: estimateData.salesRepId || undefined,
         }));
         await storage.logPricing(pricingEntries).catch(() => {});
 
         // Also log breakdown-level pricing for grouped items
-        const breakdownEntries: Array<{ trade: string; scopeKeyword: string; subCost: number; city?: string; source: string; estimateId?: number }> = [];
+        const breakdownEntries: Array<{ trade: string; scopeKeyword: string; subCost: number; clientPrice?: number; markupRate?: number; city?: string; source: string; estimateId?: number; salesRepId?: number }> = [];
         for (const item of items) {
           if (item.isGrouped && item.breakdowns && item.breakdowns.length > 0) {
             for (const bd of item.breakdowns) {
@@ -820,9 +837,12 @@ RULES:
                   trade: bd.tradeName,
                   scopeKeyword: item.phaseGroup || "other",
                   subCost: bd.subCost,
+                  clientPrice: Math.round(bd.subCost * markupMultiplier * 100) / 100,
+                  markupRate,
                   city: estimateData.city || "",
                   source: "breakdown_manual",
                   estimateId: id,
+                  salesRepId: estimateData.salesRepId || undefined,
                 });
               }
             }
@@ -1369,7 +1389,8 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
           const rows = await storage.getRecentPricing(trade, 5);
           for (const row of rows) {
             const dateStr = row.createdAt ? new Date(row.createdAt).toISOString().slice(0, 10) : "";
-            pricingRows.push(`${row.trade} | ${row.scopeKeyword} | $${row.subCost} | ${row.city || ""} | ${dateStr}`);
+            const markup = row.markupRate != null ? ` | markup:${row.markupRate}%` : "";
+            pricingRows.push(`${row.trade} | ${row.scopeKeyword} | sub:$${row.subCost}${markup} | ${row.city || ""} | ${dateStr}`);
           }
         }
 
@@ -1480,9 +1501,10 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
       try {
         const pricingRows = await storage.getAllRecentPricing(30);
         if (pricingRows.length > 0) {
-          const lines = pricingRows.map(r =>
-            `${r.trade} | ${r.scopeKeyword} | $${r.subCost} | ${r.city || ""}`
-          ).join("\n");
+          const lines = pricingRows.map(r => {
+            const markup = r.markupRate != null ? ` | markup:${r.markupRate}%` : "";
+            return `${r.trade} | ${r.scopeKeyword} | sub:$${r.subCost}${markup} | ${r.city || ""}`;
+          }).join("\n");
           pricingContext = `RECENT PRICING DATA:\n${lines}`;
         }
       } catch {

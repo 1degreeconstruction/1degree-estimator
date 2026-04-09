@@ -186,9 +186,12 @@ export const pricingHistory = pgTable("pricing_history", {
   trade: text("trade").notNull(),
   scopeKeyword: text("scope_keyword").notNull(),
   subCost: real("sub_cost").notNull(),
+  clientPrice: real("client_price"),
+  markupRate: real("markup_rate"),
   city: text("city"),
   source: text("source").notNull().default("user_edit"),
   estimateId: integer("estimate_id"),
+  salesRepId: integer("sales_rep_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
