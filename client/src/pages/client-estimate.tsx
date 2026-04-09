@@ -11,12 +11,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger
 } from "@/components/ui/collapsible";
-import { AlertCircle, Phone, Mail, ChevronDown, CheckCircle2, Download } from "lucide-react";
+import { AlertCircle, Phone, Mail, ChevronDown, CheckCircle2, Download, MessageCircle, Send, X } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { PHASE_GROUPS, GROUPED_PHASES } from "@shared/schema";
 import type { Estimate, SalesRep, PaymentMilestone } from "@shared/schema";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useForceLightMode } from "@/components/theme-provider";
 import { TrustCredentials } from "@/components/trust-credentials";
 
@@ -781,6 +782,9 @@ export default function ClientEstimate() {
           </footer>
         </div>
       </div>
+
+      {/* Chat widget */}
+      <ChatWidget uniqueId={params.uniqueId} clientName={estimate.clientName} salesRep={estimate.salesRep} />
     </>
   );
 }
@@ -793,4 +797,127 @@ function formatDateTime(dateStr: string | Date): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+// ── Chat Widget ─────────────────────────────────────────────────────────────
+interface ChatMsg { id: number; senderType: string; senderName: string; message: string; createdAt: string; }
+
+function ChatWidget({ uniqueId, clientName, salesRep }: { uniqueId: string; clientName: string; salesRep?: SalesRep }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const { data: messages = [], refetch } = useQuery<ChatMsg[]>({
+    queryKey: ["/api/estimates/public", uniqueId, "messages"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/estimates/public/${uniqueId}/messages`);
+      return res.json();
+    },
+    refetchInterval: open ? 10000 : false,
+  });
+
+  useEffect(() => {
+    if (open) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, open]);
+
+  const handleSend = async () => {
+    if (!text.trim() || sending) return;
+    setSending(true);
+    try {
+      await apiRequest("POST", `/api/estimates/public/${uniqueId}/messages`, {
+        senderName: clientName || "Client",
+        message: text.trim(),
+      });
+      setText("");
+      refetch();
+    } catch { /* noop */ }
+    setSending(false);
+  };
+
+  const unread = messages.filter(m => m.senderType === "team" && !open).length;
+
+  return (
+    <div className="fixed bottom-5 right-5 z-50" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+      {/* Chat bubble button */}
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="w-14 h-14 rounded-full bg-[#e87722] text-white shadow-lg hover:bg-[#d06a1e] transition-all flex items-center justify-center relative"
+          data-testid="button-open-chat"
+        >
+          <MessageCircle className="w-6 h-6" />
+          {unread > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{unread}</span>
+          )}
+        </button>
+      )}
+
+      {/* Chat panel */}
+      {open && (
+        <div className="w-80 sm:w-96 bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col" style={{ height: "420px" }}>
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-[#0a0a0a] rounded-t-xl">
+            <div>
+              <p className="text-white text-sm font-semibold">1 Degree Construction</p>
+              <p className="text-gray-400 text-xs">{salesRep ? `${salesRep.name} - ${salesRep.phone}` : "We typically reply within a few hours"}</p>
+            </div>
+            <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-white">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50">
+            {messages.length === 0 && (
+              <div className="text-center text-gray-400 text-xs mt-8">
+                Have a question about your estimate?<br />Send us a message below.
+              </div>
+            )}
+            {messages.map(msg => (
+              <div key={msg.id} className={`flex ${msg.senderType === "client" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                  msg.senderType === "client"
+                    ? "bg-[#e87722] text-white rounded-br-none"
+                    : "bg-white border border-gray-200 text-gray-800 rounded-bl-none"
+                }`}>
+                  {msg.senderType === "team" && (
+                    <p className="text-[10px] font-semibold text-gray-500 mb-0.5">{msg.senderName}</p>
+                  )}
+                  <p className="whitespace-pre-wrap">{msg.message}</p>
+                  <p className={`text-[10px] mt-1 ${msg.senderType === "client" ? "text-orange-200" : "text-gray-400"}`}>
+                    {new Date(msg.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                  </p>
+                </div>
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div className="p-3 border-t border-gray-200 bg-white rounded-b-xl">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={text}
+                onChange={e => setText(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSend()}
+                placeholder="Type a message..."
+                className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#e87722]/30 focus:border-[#e87722]"
+                data-testid="input-chat-message"
+              />
+              <button
+                onClick={handleSend}
+                disabled={!text.trim() || sending}
+                className="px-3 py-2 bg-[#e87722] text-white rounded-lg hover:bg-[#d06a1e] disabled:opacity-50 transition-colors"
+                data-testid="button-send-chat"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

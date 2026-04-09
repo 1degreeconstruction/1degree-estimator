@@ -162,6 +162,22 @@ export const teamConfig = pgTable("team_config", {
 });
 
 export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({ id: true });
+
+// Estimate Messages (client <-> team chat)
+export const estimateMessages = pgTable("estimate_messages", {
+  id: serial("id").primaryKey(),
+  estimateId: integer("estimate_id").notNull(),
+  senderType: text("sender_type").notNull(), // client | team
+  senderName: text("sender_name").notNull(),
+  senderUserId: integer("sender_user_id"), // null for client messages
+  message: text("message").notNull(),
+  isRead: boolean("is_read").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEstimateMessageSchema = createInsertSchema(estimateMessages).omit({ id: true });
+export type InsertEstimateMessage = z.infer<typeof insertEstimateMessageSchema>;
+export type EstimateMessage = typeof estimateMessages.$inferSelect;
 export type InsertEmailLog = z.infer<typeof insertEmailLogSchema>;
 export type EmailLog = typeof emailLogs.$inferSelect;
 

@@ -384,6 +384,104 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Estimate Chat/Messages ────────────────────────────────────────────────
+
+  // GET messages for an estimate (PUBLIC - client can see)
+  app.get("/api/estimates/public/:uniqueId/messages", async (req, res) => {
+    try {
+      const estimate = await storage.getEstimateByUniqueId(req.params.uniqueId);
+      if (!estimate) return res.status(404).json({ error: "Not found" });
+      const messages = await storage.getMessages(estimate.id);
+      res.json(messages);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST message from CLIENT (PUBLIC - no auth)
+  app.post("/api/estimates/public/:uniqueId/messages", async (req, res) => {
+    try {
+      const estimate = await storage.getEstimateByUniqueId(req.params.uniqueId);
+      if (!estimate) return res.status(404).json({ error: "Not found" });
+      const { senderName, message } = req.body;
+      if (!message?.trim()) return res.status(400).json({ error: "Message required" });
+
+      const msg = await storage.createMessage({
+        estimateId: estimate.id,
+        senderType: "client",
+        senderName: senderName || estimate.clientName || "Client",
+        message: message.trim(),
+        isRead: false,
+        createdAt: new Date(),
+      });
+
+      // Also log to inbox so team sees it
+      await storage.logEmail({
+        estimateId: estimate.id,
+        recipientEmail: "team",
+        fromEmail: estimate.clientEmail || "",
+        fromName: senderName || estimate.clientName,
+        subject: `💬 New message on estimate ${estimate.estimateNumber}`,
+        bodyPreview: message.trim().slice(0, 300),
+        direction: "inbound",
+        emailType: "client_reply",
+        status: "received",
+        isRead: false,
+        sentAt: new Date(),
+      }).catch(() => {});
+
+      res.json(msg);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET messages for an estimate (TEAM - auth required, by estimate ID)
+  app.get("/api/estimates/:id/messages", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const messages = await storage.getMessages(id);
+      // Mark client messages as read when team views them
+      await storage.markMessagesRead(id, "client");
+      res.json(messages);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST message from TEAM (auth required)
+  app.post("/api/estimates/:id/messages", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = (req as any).user as User;
+      const { message } = req.body;
+      if (!message?.trim()) return res.status(400).json({ error: "Message required" });
+
+      const msg = await storage.createMessage({
+        estimateId: id,
+        senderType: "team",
+        senderName: user.name,
+        senderUserId: user.id,
+        message: message.trim(),
+        isRead: false,
+        createdAt: new Date(),
+      });
+      res.json(msg);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET unread client message count (for team sidebar badge)
+  app.get("/api/messages/unread", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const unread = await storage.getUnreadClientMessages();
+      res.json({ count: unread.length, messages: unread });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ─── Email Routes ──────────────────────────────────────────────────────────
 
   // POST /api/estimates/:id/send-email — send estimate to client

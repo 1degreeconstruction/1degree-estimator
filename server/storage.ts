@@ -10,6 +10,7 @@ import {
   type PurchaseOrder, type InsertPurchaseOrder, purchaseOrders,
   type EstimatePurchaseOrderLink, estimatePurchaseOrderLinks,
   type EmailLog, type InsertEmailLog, emailLogs,
+  type EstimateMessage, type InsertEstimateMessage, estimateMessages,
   teamConfig, activityLog,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -100,6 +101,12 @@ export interface IStorage {
   // Activity Log
   logActivity(entry: { estimateId?: number; userId?: number; action: string; details?: string; metadata?: any }): Promise<void>;
   getActivityFeed(estimateId?: number, limit?: number): Promise<any[]>;
+
+  // Estimate Messages
+  createMessage(msg: InsertEstimateMessage): Promise<EstimateMessage>;
+  getMessages(estimateId: number): Promise<EstimateMessage[]>;
+  getUnreadClientMessages(): Promise<EstimateMessage[]>;
+  markMessagesRead(estimateId: number, senderType: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -447,6 +454,30 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(activityLog)
       .orderBy(desc(activityLog.timestamp))
       .limit(limit);
+  }
+
+  // Estimate Messages
+  async createMessage(msg: InsertEstimateMessage): Promise<EstimateMessage> {
+    const rows = await db.insert(estimateMessages).values(msg as any).returning();
+    return rows[0];
+  }
+
+  async getMessages(estimateId: number): Promise<EstimateMessage[]> {
+    return db.select().from(estimateMessages)
+      .where(eq(estimateMessages.estimateId, estimateId))
+      .orderBy(estimateMessages.createdAt);
+  }
+
+  async getUnreadClientMessages(): Promise<EstimateMessage[]> {
+    return db.select().from(estimateMessages)
+      .where(and(eq(estimateMessages.senderType, "client"), eq(estimateMessages.isRead, false)))
+      .orderBy(desc(estimateMessages.createdAt));
+  }
+
+  async markMessagesRead(estimateId: number, senderType: string): Promise<void> {
+    await db.update(estimateMessages)
+      .set({ isRead: true })
+      .where(and(eq(estimateMessages.estimateId, estimateId), eq(estimateMessages.senderType, senderType)));
   }
 
   // AI Log
