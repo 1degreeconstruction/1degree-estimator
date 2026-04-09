@@ -18,6 +18,7 @@ import AuthCallback from "@/pages/auth-callback";
 import PricingChat from "@/pages/pricing-chat";
 import PurchaseOrders from "@/pages/purchase-orders";
 import PricingDashboard from "@/pages/pricing-dashboard";
+import TeamInbox from "@/pages/team-inbox";
 import { useAuth } from "@/hooks/use-auth";
 import { setToken } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -108,6 +109,13 @@ function AppRouter() {
         {() => (
           <AuthGuard>
             <PricingDashboard />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/inbox">
+        {() => (
+          <AuthGuard>
+            <TeamInbox />
           </AuthGuard>
         )}
       </Route>

@@ -9,6 +9,8 @@ import {
   type PricingHistory, pricingHistory,
   type PurchaseOrder, type InsertPurchaseOrder, purchaseOrders,
   type EstimatePurchaseOrderLink, estimatePurchaseOrderLinks,
+  type EmailLog, type InsertEmailLog, emailLogs,
+  teamConfig, activityLog,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -82,6 +84,22 @@ export interface IStorage {
   getLinkedPurchaseOrders(estimateId: number): Promise<PurchaseOrder[]>;
   isPurchaseOrderLinked(purchaseOrderId: number, estimateId: number): Promise<boolean>;
   searchConfirmedPurchaseOrders(query: string): Promise<Array<PurchaseOrder & { projectAddress?: string }>>;
+
+  // Email Logs
+  logEmail(entry: Omit<InsertEmailLog, 'id'>): Promise<EmailLog>;
+  getEmailsForEstimate(estimateId: number): Promise<EmailLog[]>;
+  getAllEmails(limit?: number): Promise<EmailLog[]>;
+  getUnreadEmailCount(): Promise<number>;
+  markEmailRead(id: number): Promise<void>;
+  upsertEmailByMessageId(messageId: string, entry: Partial<InsertEmailLog>): Promise<void>;
+
+  // Team Config
+  getConfig(key: string): Promise<string | null>;
+  setConfig(key: string, value: string): Promise<void>;
+
+  // Activity Log
+  logActivity(entry: { estimateId?: number; userId?: number; action: string; details?: string; metadata?: any }): Promise<void>;
+  getActivityFeed(estimateId?: number, limit?: number): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -358,6 +376,77 @@ export class DatabaseStorage implements IStorage {
       ...po,
       projectAddress: po.estimateId ? addressMap[po.estimateId] : undefined,
     }));
+  }
+
+  // Email Logs
+  async logEmail(entry: Omit<InsertEmailLog, 'id'>): Promise<EmailLog> {
+    const rows = await db.insert(emailLogs).values(entry as any).returning();
+    return rows[0];
+  }
+
+  async getEmailsForEstimate(estimateId: number): Promise<EmailLog[]> {
+    return db.select().from(emailLogs)
+      .where(eq(emailLogs.estimateId, estimateId))
+      .orderBy(desc(emailLogs.sentAt));
+  }
+
+  async getAllEmails(limit = 100): Promise<EmailLog[]> {
+    return db.select().from(emailLogs)
+      .orderBy(desc(emailLogs.sentAt))
+      .limit(limit);
+  }
+
+  async getUnreadEmailCount(): Promise<number> {
+    const rows = await db.select().from(emailLogs)
+      .where(and(eq(emailLogs.direction, "inbound"), eq(emailLogs.isRead, false)));
+    return rows.length;
+  }
+
+  async markEmailRead(id: number): Promise<void> {
+    await db.update(emailLogs).set({ isRead: true }).where(eq(emailLogs.id, id));
+  }
+
+  async upsertEmailByMessageId(messageId: string, entry: Partial<InsertEmailLog>): Promise<void> {
+    const existing = await db.select().from(emailLogs).where(eq(emailLogs.gmailMessageId, messageId)).limit(1);
+    if (existing.length === 0) {
+      await db.insert(emailLogs).values({ ...(entry as any), gmailMessageId: messageId });
+    }
+  }
+
+  // Team Config
+  async getConfig(key: string): Promise<string | null> {
+    const rows = await db.select().from(teamConfig).where(eq(teamConfig.key, key)).limit(1);
+    return rows[0]?.value ?? null;
+  }
+
+  async setConfig(key: string, value: string): Promise<void> {
+    await db.insert(teamConfig)
+      .values({ key, value, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: teamConfig.key, set: { value, updatedAt: new Date() } });
+  }
+
+  // Activity Log
+  async logActivity(entry: { estimateId?: number; userId?: number; action: string; details?: string; metadata?: any }): Promise<void> {
+    await db.insert(activityLog).values({
+      estimateId: entry.estimateId ?? null,
+      userId: entry.userId ?? null,
+      action: entry.action,
+      details: entry.details ?? null,
+      metadata: entry.metadata ?? null,
+      timestamp: new Date(),
+    });
+  }
+
+  async getActivityFeed(estimateId?: number, limit = 50): Promise<any[]> {
+    if (estimateId) {
+      return db.select().from(activityLog)
+        .where(eq(activityLog.estimateId, estimateId))
+        .orderBy(desc(activityLog.timestamp))
+        .limit(limit);
+    }
+    return db.select().from(activityLog)
+      .orderBy(desc(activityLog.timestamp))
+      .limit(limit);
   }
 
   // AI Log

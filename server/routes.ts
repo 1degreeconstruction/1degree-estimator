@@ -5,6 +5,14 @@ import { pricingHistory } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { format, addDays } from "date-fns";
 import Anthropic from "@anthropic-ai/sdk";
+import {
+  sendGmailEmail,
+  buildEstimateEmail,
+  buildFollowUpEmail,
+  buildClientViewedEmail,
+  buildClientSignedEmail,
+  pollTeamInbox,
+} from "./emailService";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import cors from "cors";
@@ -165,7 +173,7 @@ export async function registerRoutes(
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "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",
       callbackURL: process.env.GOOGLE_CALLBACK_URL || "https://onedegree-estimator.onrender.com/auth/google/callback",
     },
-    async (_accessToken, _refreshToken, profile, done) => {
+    async (accessToken, refreshToken, profile, done) => {
       try {
         const googleId = profile.id;
         const email = profile.emails?.[0]?.value || "";
@@ -176,8 +184,10 @@ export async function registerRoutes(
         let user = await storage.getUserByGoogleId(googleId);
 
         if (user) {
-          // Update last login
-          user = await storage.updateUser(user.id, { lastLoginAt: new Date() });
+          // Update last login + store fresh tokens
+          const tokenUpdates: Partial<User> = { lastLoginAt: new Date(), googleAccessToken: accessToken };
+          if (refreshToken) tokenUpdates.googleRefreshToken = refreshToken;
+          user = await storage.updateUser(user.id, tokenUpdates);
           return done(null, user as Express.User);
         }
 
@@ -195,6 +205,8 @@ export async function registerRoutes(
           isActive,
           createdAt: new Date(),
           lastLoginAt: new Date(),
+          googleAccessToken: accessToken,
+          googleRefreshToken: refreshToken || null,
         });
 
         return done(null, newUser as Express.User);
@@ -207,9 +219,11 @@ export async function registerRoutes(
   // --- Auth Routes ---
 
   app.get("/auth/google", passport.authenticate("google", {
-    scope: ["profile", "email"],
+    scope: ["profile", "email", "https://www.googleapis.com/auth/gmail.send"],
+    accessType: "offline",
+    prompt: "consent",
     session: false,
-  }));
+  } as any));
 
   app.get("/auth/google/callback",
     passport.authenticate("google", { failureRedirect: "/login", session: false }),
@@ -329,16 +343,23 @@ export async function registerRoutes(
 
       // Log view event
       if (estimate.status === "sent") {
-        await storage.updateEstimate(estimate.id, {
-          status: "viewed",
-          viewedAt: new Date(),
-        });
-        await storage.createEvent({
+        const viewedAt = new Date();
+        await storage.updateEstimate(estimate.id, { status: "viewed", viewedAt });
+        await storage.createEvent({ estimateId: estimate.id, eventType: "viewed", timestamp: viewedAt, metadata: req.ip || null });
+        // Notify team inbox
+        await storage.logEmail({
           estimateId: estimate.id,
-          eventType: "viewed",
-          timestamp: new Date(),
-          metadata: req.ip || null,
-        });
+          recipientEmail: "team",
+          fromEmail: estimate.clientEmail || "",
+          fromName: estimate.clientName,
+          subject: `👀 ${estimate.clientName} viewed estimate ${estimate.estimateNumber}`,
+          bodyPreview: `${estimate.clientName} opened the estimate for ${estimate.projectAddress}.`,
+          direction: "inbound",
+          emailType: "internal_notification",
+          status: "received",
+          isRead: false,
+          sentAt: viewedAt,
+        }).catch(() => {});
       }
 
       const [salesRep, items, milestones] = await Promise.all([
@@ -361,6 +382,313 @@ export async function registerRoutes(
       res.status(500).json({ error: err.message });
     }
   });
+
+  // ─── Email Routes ──────────────────────────────────────────────────────────
+
+  // POST /api/estimates/:id/send-email — send estimate to client
+  app.post("/api/estimates/:id/send-email", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = (req as any).user as User;
+      if (!user.googleAccessToken) {
+        return res.status(403).json({ error: "No Gmail token. Please sign out and sign back in to grant email access." });
+      }
+
+      const estimate = await storage.getEstimate(id);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+      const clientEmail = estimate.clientEmail;
+      if (!clientEmail) return res.status(400).json({ error: "Estimate has no client email" });
+
+      const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
+      const viewUrl = `${appUrl}/#/client/${estimate.uniqueId}`;
+
+      const { subject, html } = buildEstimateEmail({
+        clientName: estimate.clientName,
+        senderName: user.name,
+        estimateNumber: estimate.estimateNumber,
+        projectAddress: estimate.projectAddress,
+        totalClientPrice: estimate.totalClientPrice,
+        viewUrl,
+        validUntil: estimate.validUntil || "",
+      });
+
+      const { messageId } = await sendGmailEmail({
+        senderName: user.name,
+        senderEmail: user.email,
+        accessToken: user.googleAccessToken,
+        refreshToken: user.googleRefreshToken || null,
+        to: clientEmail,
+        subject,
+        html,
+      });
+
+      // Log the email
+      await storage.logEmail({
+        estimateId: id,
+        sentByUserId: user.id,
+        recipientEmail: clientEmail,
+        subject,
+        bodyPreview: `Estimate ${estimate.estimateNumber} sent to ${clientEmail}`,
+        gmailMessageId: messageId,
+        emailType: "estimate",
+        status: "sent",
+      });
+
+      // Mark estimate as sent if it was a draft
+      if (estimate.status === "draft") {
+        await storage.updateEstimate(id, { status: "sent", sentAt: new Date() });
+      }
+
+      // Log activity
+      await storage.logActivity({
+        estimateId: id,
+        userId: user.id,
+        action: "email_sent",
+        details: `Estimate emailed to ${clientEmail} by ${user.name}`,
+      });
+
+      res.json({ ok: true, messageId });
+    } catch (err: any) {
+      console.error("[send-email] error:", err);
+      res.status(500).json({ error: err.message || "Failed to send email" });
+    }
+  });
+
+  // POST /api/estimates/:id/send-followup — manual follow-up email
+  app.post("/api/estimates/:id/send-followup", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = (req as any).user as User;
+      if (!user.googleAccessToken) {
+        return res.status(403).json({ error: "No Gmail token. Please sign out and sign back in." });
+      }
+
+      const estimate = await storage.getEstimate(id);
+      if (!estimate) return res.status(404).json({ error: "Not found" });
+      if (!estimate.clientEmail) return res.status(400).json({ error: "No client email" });
+
+      const daysSinceSent = estimate.sentAt
+        ? Math.floor((Date.now() - new Date(estimate.sentAt).getTime()) / 86400000)
+        : 0;
+
+      const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
+      const viewUrl = `${appUrl}/#/client/${estimate.uniqueId}`;
+
+      const { subject, html } = buildFollowUpEmail({
+        clientName: estimate.clientName,
+        senderName: user.name,
+        estimateNumber: estimate.estimateNumber,
+        projectAddress: estimate.projectAddress,
+        viewUrl,
+        daysSinceSent,
+      });
+
+      const { messageId } = await sendGmailEmail({
+        senderName: user.name,
+        senderEmail: user.email,
+        accessToken: user.googleAccessToken,
+        refreshToken: user.googleRefreshToken || null,
+        to: estimate.clientEmail,
+        subject,
+        html,
+      });
+
+      await storage.logEmail({
+        estimateId: id,
+        sentByUserId: user.id,
+        recipientEmail: estimate.clientEmail,
+        subject,
+        bodyPreview: `Follow-up sent for estimate ${estimate.estimateNumber}`,
+        gmailMessageId: messageId,
+        emailType: "follow_up_1",
+        status: "sent",
+      });
+
+      await storage.logActivity({
+        estimateId: id,
+        userId: user.id,
+        action: "email_sent",
+        details: `Follow-up email sent to ${estimate.clientEmail} by ${user.name}`,
+      });
+
+      res.json({ ok: true, messageId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/estimates/:id/emails — email history for an estimate
+  app.get("/api/estimates/:id/emails", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const emails = await storage.getEmailsForEstimate(id);
+      res.json(emails);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/inbox — all emails across all estimates (team shared inbox)
+  app.get("/api/inbox", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const emails = await storage.getAllEmails(limit);
+      const unreadCount = await storage.getUnreadEmailCount();
+      res.json({ emails, unreadCount });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/inbox/poll — pull new inbound replies from the team Gmail
+  app.post("/api/inbox/poll", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const accessToken  = await storage.getConfig("team_access_token");
+      const refreshToken = await storage.getConfig("team_refresh_token");
+      if (!accessToken) return res.status(400).json({ error: "Team Gmail not connected. Go to Settings to connect." });
+
+      const messages = await pollTeamInbox({ accessToken, refreshToken });
+
+      let saved = 0;
+      for (const msg of messages) {
+        // Try to match estimate number from subject (e.g. "Re: Your Estimate ... — 585RC-OK-..."
+        const estNumMatch = msg.subject.match(/([A-Z0-9]+-[A-Z]+-\d{8}-\d+)/i);
+        let estimateId: number | null = null;
+        if (estNumMatch) {
+          const est = await storage.getEstimates();
+          const matched = est.find(e => e.estimateNumber === estNumMatch[1]);
+          if (matched) estimateId = matched.id;
+        }
+
+        await storage.upsertEmailByMessageId(msg.messageId, {
+          estimateId: estimateId ?? undefined,
+          recipientEmail: "1degreeconstruction@gmail.com",
+          fromEmail: msg.fromEmail,
+          fromName: msg.fromName,
+          subject: msg.subject,
+          bodyPreview: msg.bodyText.slice(0, 300),
+          bodyHtml: msg.bodyHtml || msg.bodyText,
+          gmailMessageId: msg.messageId,
+          gmailThreadId: msg.threadId,
+          direction: "inbound",
+          emailType: "client_reply",
+          status: "received",
+          isRead: false,
+          sentAt: msg.date,
+        });
+        saved++;
+      }
+
+      res.json({ polled: messages.length, saved });
+    } catch (err: any) {
+      console.error("[inbox/poll] error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/inbox/:id/read — mark email as read
+  app.post("/api/inbox/:id/read", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.markEmailRead(parseInt(req.params.id));
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/inbox/connect-team-gmail — admin stores team OAuth tokens
+  app.post("/api/inbox/connect-team-gmail", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user as User;
+      if (user.role !== "admin") return res.status(403).json({ error: "Admin only" });
+      if (!user.googleAccessToken) return res.status(400).json({ error: "Sign out and back in with Gmail permissions first." });
+
+      // Store this admin user's tokens as the team inbox token
+      await storage.setConfig("team_access_token", user.googleAccessToken);
+      if (user.googleRefreshToken) await storage.setConfig("team_refresh_token", user.googleRefreshToken);
+      await storage.setConfig("team_gmail_email", user.email);
+
+      res.json({ ok: true, connectedAs: user.email });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/inbox/status — is team Gmail connected?
+  app.get("/api/inbox/status", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const email = await storage.getConfig("team_gmail_email");
+      const unread = await storage.getUnreadEmailCount();
+      res.json({ connected: !!email, connectedAs: email, unreadCount: unread });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/estimates/:id/reply — reply to a client from any team member
+  app.post("/api/estimates/:id/reply", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = (req as any).user as User;
+      if (!user.googleAccessToken) return res.status(403).json({ error: "No Gmail token. Sign out and back in." });
+
+      const estimate = await storage.getEstimate(id);
+      if (!estimate) return res.status(404).json({ error: "Not found" });
+      if (!estimate.clientEmail) return res.status(400).json({ error: "No client email" });
+
+      const { message, subject, threadId } = req.body;
+      if (!message) return res.status(400).json({ error: "message is required" });
+
+      const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
+      const viewUrl = `${appUrl}/#/client/${estimate.uniqueId}`;
+
+      const replySubject = subject || `Re: Your Estimate from 1 Degree Construction — ${estimate.estimateNumber}`;
+      const html = `
+        <div style="font-family:sans-serif;max-width:600px;">
+          <p>${message.replace(/\n/g, "<br>")}</p>
+          <br>
+          <p style="color:#888;font-size:13px;">---<br>
+            <strong>${user.name}</strong> | 1 Degree Construction<br>
+            <a href="${viewUrl}" style="color:#e87722;">View your estimate</a>
+          </p>
+        </div>`;
+
+      const { messageId, threadId: newThreadId } = await sendGmailEmail({
+        senderName: user.name,
+        senderEmail: user.email,
+        accessToken: user.googleAccessToken,
+        refreshToken: user.googleRefreshToken || null,
+        to: estimate.clientEmail,
+        subject: replySubject,
+        html,
+        threadId,
+      });
+
+      await storage.logEmail({
+        estimateId: id,
+        sentByUserId: user.id,
+        recipientEmail: estimate.clientEmail,
+        fromEmail: user.email,
+        fromName: user.name,
+        subject: replySubject,
+        bodyPreview: message.slice(0, 300),
+        gmailMessageId: messageId,
+        gmailThreadId: newThreadId,
+        direction: "outbound",
+        emailType: "follow_up_1",
+        status: "sent",
+        isRead: true,
+      });
+
+      await storage.logActivity({ estimateId: id, userId: user.id, action: "email_sent", details: `Reply sent to ${estimate.clientEmail} by ${user.name}` });
+      res.json({ ok: true, messageId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   // Pricing History endpoints
   app.post("/api/pricing-history", async (req, res) => {
@@ -882,6 +1210,21 @@ RULES:
         timestamp: now,
         metadata: JSON.stringify({ ip: req.ip, signatureName }),
       });
+
+      // Log to shared inbox so whole team sees it
+      await storage.logEmail({
+        estimateId: estimate.id,
+        recipientEmail: "team",
+        fromEmail: estimate.clientEmail || "",
+        fromName: estimate.clientName,
+        subject: `🎉 ${estimate.clientName} signed estimate ${estimate.estimateNumber}`,
+        bodyPreview: `${estimate.clientName} accepted the estimate for ${estimate.projectAddress}. Total: $${estimate.totalClientPrice.toLocaleString()}. Signed by: ${signatureName}`,
+        direction: "inbound",
+        emailType: "internal_notification",
+        status: "received",
+        isRead: false,
+        sentAt: now,
+      }).catch(() => {});
 
       res.json(updated);
     } catch (err: any) {

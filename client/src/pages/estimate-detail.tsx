@@ -170,8 +170,21 @@ export default function EstimateDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", params.id] });
-      toast({ title: "Estimate resent" });
+      toast({ title: "Estimate marked as sent" });
     },
+  });
+
+  const emailMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/estimates/${params.id}/send-email`);
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", params.id] });
+      toast({ title: "Estimate emailed to client" });
+    },
+    onError: (e: any) => toast({ title: "Email failed", description: e.message, variant: "destructive" }),
   });
 
   const copyLink = () => {
@@ -271,8 +284,16 @@ export default function EstimateDetailPage() {
               </Button>
             </Link>
             {(estimate.status === "draft" || estimate.status === "viewed") && (
-              <Button size="sm" className="gap-2" onClick={() => resendMutation.mutate()} disabled={resendMutation.isPending} data-testid="button-resend">
-                <Send className="w-4 h-4" /> {estimate.status === "draft" ? "Send" : "Resend"}
+              <Button
+                size="sm"
+                className="gap-2 bg-orange-600 hover:bg-orange-700"
+                onClick={() => emailMutation.mutate()}
+                disabled={emailMutation.isPending || !estimate.clientEmail}
+                title={!estimate.clientEmail ? "Add a client email first" : ""}
+                data-testid="button-email-client"
+              >
+                <Send className="w-4 h-4" />
+                {emailMutation.isPending ? "Sending..." : estimate.status === "draft" ? "Email to Client" : "Re-send Email"}
               </Button>
             )}
           </div>

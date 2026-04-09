@@ -107,6 +107,8 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at"),
+  googleRefreshToken: text("google_refresh_token"),
+  googleAccessToken: text("google_access_token"),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
@@ -135,15 +137,28 @@ export type Contact = typeof contacts.$inferSelect;
 // Email Logs
 export const emailLogs = pgTable("email_logs", {
   id: serial("id").primaryKey(),
-  estimateId: integer("estimate_id").notNull(),
+  estimateId: integer("estimate_id"),  // nullable for unmatched inbound
   sentByUserId: integer("sent_by_user_id"),
   recipientEmail: text("recipient_email").notNull(),
+  fromEmail: text("from_email"),        // sender (for inbound)
+  fromName: text("from_name"),
   subject: text("subject").notNull(),
   bodyPreview: text("body_preview"),
-  gmailMessageId: text("gmail_message_id"),
-  emailType: text("email_type").notNull(), // estimate | follow_up_1 | follow_up_2 | confirmation
-  status: text("status").notNull().default("sent"), // sent | failed | bounced
+  bodyHtml: text("body_html"),          // full body for inbound replies
+  gmailMessageId: text("gmail_message_id").unique(),
+  gmailThreadId: text("gmail_thread_id"),
+  direction: text("direction").notNull().default("outbound"), // outbound | inbound
+  emailType: text("email_type").notNull(), // estimate | follow_up_1 | follow_up_2 | client_reply | internal_notification
+  status: text("status").notNull().default("sent"),
+  isRead: boolean("is_read").notNull().default(false),
   sentAt: timestamp("sent_at").notNull().defaultNow(),
+});
+
+// Team config (key-value store for shared settings)
+export const teamConfig = pgTable("team_config", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({ id: true });
