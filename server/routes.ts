@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage, db } from "./storage";
 import { pricingHistory } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { format, addDays } from "date-fns";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -216,6 +216,21 @@ export async function registerRoutes(
       }
     }
   ));
+
+  // ─── Global Error Logger ─────────────────────────────────────────────────
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const originalJson = res.json.bind(res);
+    res.json = function(body: any) {
+      if (res.statusCode >= 400 && body?.error) {
+        const userId = (req as any).user?.id || null;
+        db.execute(sql`INSERT INTO error_log (route, method, status, error_message, user_id, created_at)
+          VALUES (${req.originalUrl}, ${req.method}, ${res.statusCode}, ${String(body.error).slice(0, 2000)}, ${userId}, NOW())`
+        ).catch(() => {});
+      }
+      return originalJson(body);
+    };
+    next();
+  });
 
   // --- Auth Routes ---
 
@@ -2607,6 +2622,29 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
       if (!rows[0]) return res.status(404).json({ error: "Not found" });
       console.log(`[pricing-dashboard] User ${user.email} updated pricing_history id=${id} subCost=${subCost}`);
       res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Error Log Routes ──────────────────────────────────────────────────────
+
+  // GET /api/admin/errors — view recent errors
+  app.get("/api/admin/errors", requireAdmin as any, async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const rows = await db.execute(sql`SELECT * FROM error_log ORDER BY created_at DESC LIMIT ${limit}`);
+      res.json(rows.rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/admin/errors — clear error log
+  app.delete("/api/admin/errors", requireAdmin as any, async (_req: Request, res: Response) => {
+    try {
+      await db.execute(sql`DELETE FROM error_log`);
+      res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
