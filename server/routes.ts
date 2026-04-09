@@ -430,36 +430,37 @@ export async function registerRoutes(
         sentAt: new Date(),
       }).catch(() => {});
 
-      // Email all sales reps about the new message
+      // Email all sales reps about the new message (from team inbox account)
       try {
-        const reps = await storage.getSalesReps();
-        const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
-        const chatUrl = `${appUrl}/#/chat`;
-        const clientLabel = senderName || estimate.clientName || "A client";
+        const teamAccessToken = await storage.getConfig("team_access_token");
+        const teamRefreshToken = await storage.getConfig("team_refresh_token");
+        const teamEmail = await storage.getConfig("team_gmail_email");
+        if (teamAccessToken && teamEmail) {
+          const reps = await storage.getSalesReps();
+          const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
+          const chatUrl = `${appUrl}/#/chat`;
+          const clientLabel = senderName || estimate.clientName || "A client";
 
-        for (const rep of reps) {
-          // Find the user account for this rep to get their Gmail token
-          const repUser = await storage.getUserByEmail(rep.email);
-          if (!repUser?.googleAccessToken) continue;
+          for (const rep of reps) {
+            const html = `<div style="font-family:sans-serif;max-width:600px;">
+              <p style="margin:0 0 12px;font-size:15px;color:#333;"><strong>${clientLabel}</strong> sent a message on estimate <strong>${estimate.estimateNumber}</strong>:</p>
+              <div style="background:#f5f5f5;border-left:3px solid #e87722;padding:12px 16px;margin:0 0 20px;border-radius:4px;">
+                <p style="margin:0;font-size:14px;color:#555;white-space:pre-wrap;">${message.trim()}</p>
+              </div>
+              <p style="margin:0 0 4px;font-size:13px;color:#888;">Project: ${estimate.projectAddress}</p>
+              <a href="${chatUrl}" style="display:inline-block;margin-top:12px;background:#e87722;color:#fff;padding:10px 24px;border-radius:6px;font-size:14px;font-weight:600;text-decoration:none;">Reply in App</a>
+            </div>`;
 
-          const html = `<div style="font-family:sans-serif;max-width:600px;">
-            <p style="margin:0 0 12px;font-size:15px;color:#333;"><strong>${clientLabel}</strong> sent a message on estimate <strong>${estimate.estimateNumber}</strong>:</p>
-            <div style="background:#f5f5f5;border-left:3px solid #e87722;padding:12px 16px;margin:0 0 20px;border-radius:4px;">
-              <p style="margin:0;font-size:14px;color:#555;white-space:pre-wrap;">${message.trim()}</p>
-            </div>
-            <p style="margin:0 0 4px;font-size:13px;color:#888;">Project: ${estimate.projectAddress}</p>
-            <a href="${chatUrl}" style="display:inline-block;margin-top:12px;background:#e87722;color:#fff;padding:10px 24px;border-radius:6px;font-size:14px;font-weight:600;text-decoration:none;">Reply in App</a>
-          </div>`;
-
-          await sendGmailEmail({
-            senderName: "1 Degree Estimates",
-            senderEmail: repUser.email,
-            accessToken: repUser.googleAccessToken,
-            refreshToken: repUser.googleRefreshToken || null,
-            to: rep.email,
-            subject: `New message from ${clientLabel} - ${estimate.estimateNumber}`,
-            html,
-          }).catch(() => {});
+            await sendGmailEmail({
+              senderName: "1 Degree Estimates",
+              senderEmail: teamEmail,
+              accessToken: teamAccessToken,
+              refreshToken: teamRefreshToken,
+              to: rep.email,
+              subject: `New message from ${clientLabel} - ${estimate.estimateNumber}`,
+              html,
+            }).catch(() => {});
+          }
         }
       } catch { /* non-fatal */ }
 
