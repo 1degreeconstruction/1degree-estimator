@@ -67,7 +67,7 @@ const PRE_APPROVED_EMAILS: Record<string, string> = {
   "david@1degreeconstruction.com": "admin",
   "thai@1degreeconstruction.com": "admin",
   "oliver@1degreeconstruction.com": "admin",
-  "1dcestimatesdonotreply@gmail.com": "admin",
+  "1dcestimatesdonotreply@gmail.com": "viewer",
 };
 
 // JWT Auth middleware
@@ -602,7 +602,7 @@ export async function registerRoutes(
   app.post("/api/inbox/connect-team-gmail", requireAuth as any, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user as User;
-      if (user.role !== "admin") return res.status(403).json({ error: "Admin only" });
+      if (user.role !== "admin" && user.role !== "viewer") return res.status(403).json({ error: "Admin only" });
       if (!user.googleAccessToken) return res.status(400).json({ error: "Sign out and back in with Gmail permissions first." });
 
       // Store this admin user's tokens as the team inbox token
