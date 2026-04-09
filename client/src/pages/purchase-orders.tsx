@@ -354,6 +354,55 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
         {/* Expanded content */}
         {expanded && !isProcessing && (
           <div className="mt-4 space-y-4">
+            {/* File preview */}
+            {po.fileUrl && (
+              <div className="border rounded-md overflow-hidden">
+                <div className="bg-muted/40 px-3 py-1.5 flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Document Preview</span>
+                  <a href={po.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">Open full size</a>
+                </div>
+                {po.filename?.match(/\.(jpg|jpeg|png)$/i) ? (
+                  <img src={po.fileUrl} alt={po.filename} className="w-full max-h-[400px] object-contain bg-white" />
+                ) : po.filename?.match(/\.pdf$/i) ? (
+                  <iframe src={po.fileUrl} className="w-full h-[400px] bg-white" title={po.filename} />
+                ) : (
+                  <div className="p-4 text-center text-xs text-muted-foreground">Preview not available — <a href={po.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">download file</a></div>
+                )}
+              </div>
+            )}
+
+            {/* AI reasoning / how it understood the pricing */}
+            {parsedData && parsedData.items && parsedData.items.length > 0 && (
+              <div className="border border-blue-500/20 bg-blue-500/5 rounded-md p-3 space-y-2">
+                <p className="text-xs font-semibold text-blue-400">AI Pricing Breakdown</p>
+                <div className="text-xs text-muted-foreground space-y-1.5">
+                  {parsedData.subName && <p><span className="text-foreground font-medium">Vendor:</span> {parsedData.subName} {parsedData.subPhone ? `(${parsedData.subPhone})` : ''}</p>}
+                  {parsedData.projectAddress && <p><span className="text-foreground font-medium">Project:</span> {parsedData.projectAddress}</p>}
+                  {parsedData.date && <p><span className="text-foreground font-medium">Date:</span> {parsedData.date}</p>}
+                  <div className="border-t border-blue-500/10 pt-1.5 mt-1.5">
+                    <p className="text-foreground font-medium mb-1">How I interpreted the pricing:</p>
+                    {parsedData.items.map((item, i) => (
+                      <div key={i} className="flex justify-between py-0.5">
+                        <span>
+                          <span className="font-medium text-foreground">{item.trade}</span>
+                          {item.description && <span className="text-muted-foreground"> — {item.description}</span>}
+                        </span>
+                        <span className="font-mono text-foreground">${item.amount?.toLocaleString()} <span className="text-muted-foreground">({item.unit})</span></span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-1.5 border-t border-blue-500/10 font-medium text-foreground">
+                      <span>Total</span>
+                      <span className="font-mono">${parsedData.total?.toLocaleString() || parsedData.items.reduce((s, i) => s + (i.amount || 0), 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] mt-1">
+                    Confidence: <span className={parsedData.confidence === 'high' ? 'text-green-500' : parsedData.confidence === 'medium' ? 'text-amber-500' : 'text-red-500'}>{parsedData.confidence || 'unknown'}</span>
+                    {parsedData.confidence !== 'high' && ' — review numbers before confirming'}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Meta info */}
             {parsedData && (parsedData.subName || parsedData.date || parsedData.projectAddress) && (
               <div className="bg-muted/40 rounded-md p-3 text-sm grid grid-cols-1 md:grid-cols-3 gap-2">
