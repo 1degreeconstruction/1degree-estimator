@@ -17,7 +17,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { PHASE_GROUPS, GROUPED_PHASES } from "@shared/schema";
 import type { SalesRep, Estimate, LineItem, PaymentMilestone } from "@shared/schema";
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 
 interface BreakdownForm {
@@ -92,6 +92,59 @@ export default function EstimateForm() {
   const [pricingInput, setPricingInput] = useState("");
   const [pricingLoading, setPricingLoading] = useState(false);
   const pricingEndRef = useRef<HTMLDivElement>(null);
+
+  // AI Breakdown state: track which line item index is loading
+  const [aiBreakdownLoading, setAiBreakdownLoading] = useState<number | null>(null);
+
+  // Market rates cache: tradeName -> rates
+  const [marketRatesCache, setMarketRatesCache] = useState<Record<string, { low: number; mid: number; high: number; unit: string } | null>>({});
+
+  // Fetch market rate for a trade name (memoized per trade)
+  const fetchMarketRate = useCallback(async (tradeName: string) => {
+    if (!tradeName || marketRatesCache.hasOwnProperty(tradeName)) return;
+    // Pre-populate with null to avoid duplicate requests
+    setMarketRatesCache(prev => ({ ...prev, [tradeName]: null }));
+    try {
+      const res = await apiRequest("GET", `/api/market-rates?trade=${encodeURIComponent(tradeName)}`);
+      const data = await res.json();
+      setMarketRatesCache(prev => ({ ...prev, [tradeName]: data.rates || null }));
+    } catch {
+      // non-fatal
+    }
+  }, [marketRatesCache]);
+
+  // AI Breakdown handler
+  const handleAiBreakdown = useCallback(async (idx: number) => {
+    const item = items[idx];
+    if (!item || item.subCost <= 0) {
+      toast({ title: "Set a sub cost first", description: "Enter the total sub cost before generating a breakdown.", variant: "destructive" });
+      return;
+    }
+    setAiBreakdownLoading(idx);
+    try {
+      const res = await apiRequest("POST", "/api/ai/breakdown", {
+        phaseGroup: item.phaseGroup,
+        totalSubCost: item.subCost,
+        scopeDescription: item.scopeDescription,
+        city,
+      });
+      const data = await res.json();
+      if (data.breakdowns && Array.isArray(data.breakdowns)) {
+        setItems(prev => {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], breakdowns: data.breakdowns };
+          return updated;
+        });
+        toast({ title: "AI Breakdown generated", description: `${data.breakdowns.length} trades populated.` });
+      } else {
+        toast({ title: "AI Breakdown failed", description: data.error || "Unexpected response", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({ title: "AI Breakdown failed", description: err.message || "Network error", variant: "destructive" });
+    } finally {
+      setAiBreakdownLoading(null);
+    }
+  }, [items, city, toast]);
 
   const handlePricingChat = useCallback(async () => {
     if (!pricingInput.trim() || pricingLoading) return;
@@ -218,11 +271,21 @@ export default function EstimateForm() {
             subCost: li.subCost,
             isGrouped: li.isGrouped,
             sortOrder: li.sortOrder,
-            breakdowns: ((li as any).breakdowns || []).map((bd: any) => ({
-              tradeName: bd.tradeName || "",
-              subCost: bd.subCost || 0,
-              notes: bd.notes || "",
-            })),
+            breakdowns: (() => {
+              const existingBds = (li as any).breakdowns || [];
+              if (existingBds.length > 0) {
+                return existingBds.map((bd: any) => ({
+                  tradeName: bd.tradeName || "",
+                  subCost: bd.subCost || 0,
+                  notes: bd.notes || "",
+                }));
+              }
+              // Fallback to default breakdown rows for known grouped phases
+              if (li.isGrouped && DEFAULT_BREAKDOWNS[li.phaseGroup]) {
+                return DEFAULT_BREAKDOWNS[li.phaseGroup].map(bd => ({ ...bd }));
+              }
+              return [];
+            })(),
           }))
       );
       setMilestones(
@@ -686,38 +749,87 @@ export default function EstimateForm() {
                         {/* Trade Breakdown section for grouped items */}
                         {item.isGrouped && (
                           <div className="mt-2 border border-dashed border-primary/30 rounded-md p-3 bg-primary/5 space-y-2" data-testid={`breakdown-section-${idx}`}>
-                            <div className="flex items-center justify-between">
-                              <Label className="text-xs font-semibold text-primary flex items-center gap-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <Label className="text-xs font-semibold text-primary flex items-center gap-1 shrink-0">
                                 <Layers className="w-3 h-3" /> Trade Breakdown (Internal Only)
                               </Label>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 px-2 text-xs"
-                                onClick={() => addBreakdown(idx)}
-                                data-testid={`button-add-breakdown-${idx}`}
-                              >
-                                <Plus className="w-3 h-3 mr-1" /> Add Trade
-                              </Button>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 px-2 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10"
+                                  onClick={() => handleAiBreakdown(idx)}
+                                  disabled={aiBreakdownLoading === idx}
+                                  data-testid={`button-ai-breakdown-${idx}`}
+                                >
+                                  {aiBreakdownLoading === idx ? (
+                                    <><Loader2 className="w-3 h-3 animate-spin" /> Generating...</>
+                                  ) : (
+                                    <><Sparkles className="w-3 h-3" /> AI Breakdown</>
+                                  )}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => addBreakdown(idx)}
+                                  data-testid={`button-add-breakdown-${idx}`}
+                                >
+                                  <Plus className="w-3 h-3 mr-1" /> Add Trade
+                                </Button>
+                              </div>
                             </div>
-                            {item.breakdowns.map((bd, bdIdx) => (
+                            {item.breakdowns.map((bd, bdIdx) => {
+                              // Trigger market rate fetch when tradeName is known
+                              if (bd.tradeName && !marketRatesCache.hasOwnProperty(bd.tradeName)) {
+                                fetchMarketRate(bd.tradeName);
+                              }
+                              const marketRate = bd.tradeName ? marketRatesCache[bd.tradeName] : undefined;
+                              let marketBadge: React.ReactNode = null;
+                              if (marketRate && bd.subCost > 0) {
+                                if (bd.subCost < marketRate.low) {
+                                  marketBadge = (
+                                    <span className="text-[10px] text-blue-500 whitespace-nowrap font-medium" title={`Market: $${marketRate.low.toLocaleString()}–$${marketRate.high.toLocaleString()} ${marketRate.unit}`}>
+                                      ↓ Below
+                                    </span>
+                                  );
+                                } else if (bd.subCost > marketRate.mid) {
+                                  marketBadge = (
+                                    <span className="text-[10px] text-amber-500 whitespace-nowrap font-medium" title={`Market: $${marketRate.low.toLocaleString()}–$${marketRate.high.toLocaleString()} ${marketRate.unit}`}>
+                                      ↑ Above
+                                    </span>
+                                  );
+                                } else {
+                                  marketBadge = (
+                                    <span className="text-[10px] text-green-600 whitespace-nowrap font-medium" title={`Market: $${marketRate.low.toLocaleString()}–$${marketRate.high.toLocaleString()} ${marketRate.unit}`}>
+                                      ✓ Market
+                                    </span>
+                                  );
+                                }
+                              }
+                              return (
                               <div key={bdIdx} className="flex items-center gap-2" data-testid={`breakdown-row-${idx}-${bdIdx}`}>
                                 <Input
                                   className="flex-1 h-7 text-xs"
                                   placeholder="Trade name"
                                   value={bd.tradeName}
                                   onChange={e => updateBreakdown(idx, bdIdx, "tradeName", e.target.value)}
+                                  onBlur={e => e.target.value && fetchMarketRate(e.target.value)}
                                   data-testid={`input-breakdown-trade-${idx}-${bdIdx}`}
                                 />
-                                <Input
-                                  type="number"
-                                  className="w-28 h-7 text-xs"
-                                  placeholder="0.00"
-                                  value={bd.subCost || ""}
-                                  onChange={e => updateBreakdown(idx, bdIdx, "subCost", parseFloat(e.target.value) || 0)}
-                                  data-testid={`input-breakdown-cost-${idx}-${bdIdx}`}
-                                />
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    type="number"
+                                    className="w-24 h-7 text-xs"
+                                    placeholder="0.00"
+                                    value={bd.subCost || ""}
+                                    onChange={e => updateBreakdown(idx, bdIdx, "subCost", parseFloat(e.target.value) || 0)}
+                                    data-testid={`input-breakdown-cost-${idx}-${bdIdx}`}
+                                  />
+                                  {marketBadge}
+                                </div>
                                 <Input
                                   className="flex-1 h-7 text-xs"
                                   placeholder="Notes (optional)"
@@ -736,7 +848,8 @@ export default function EstimateForm() {
                                   <Trash2 className="w-3 h-3" />
                                 </Button>
                               </div>
-                            ))}
+                              );
+                            })}
                             <div className="flex justify-between items-center pt-1 border-t border-primary/20 text-xs">
                               <span className="text-muted-foreground">Breakdown Total</span>
                               <span className={`font-mono font-semibold ${

@@ -579,6 +579,28 @@ RULES:
           estimateId: estimate.id,
         }));
         await storage.logPricing(pricingEntries).catch(() => {});
+
+        // Also log breakdown-level pricing for grouped items
+        const breakdownEntries: Array<{ trade: string; scopeKeyword: string; subCost: number; city?: string; source: string; estimateId?: number }> = [];
+        for (const item of items) {
+          if (item.isGrouped && item.breakdowns && item.breakdowns.length > 0) {
+            for (const bd of item.breakdowns) {
+              if (bd.tradeName && bd.subCost > 0) {
+                breakdownEntries.push({
+                  trade: bd.tradeName,
+                  scopeKeyword: item.phaseGroup || "other",
+                  subCost: bd.subCost,
+                  city: estimateData.city || "",
+                  source: "breakdown_manual",
+                  estimateId: estimate.id,
+                });
+              }
+            }
+          }
+        }
+        if (breakdownEntries.length > 0) {
+          await storage.logPricing(breakdownEntries).catch(() => {});
+        }
       }
 
       res.json(estimate);
@@ -696,6 +718,28 @@ RULES:
           estimateId: id,
         }));
         await storage.logPricing(pricingEntries).catch(() => {});
+
+        // Also log breakdown-level pricing for grouped items
+        const breakdownEntries: Array<{ trade: string; scopeKeyword: string; subCost: number; city?: string; source: string; estimateId?: number }> = [];
+        for (const item of items) {
+          if (item.isGrouped && item.breakdowns && item.breakdowns.length > 0) {
+            for (const bd of item.breakdowns) {
+              if (bd.tradeName && bd.subCost > 0) {
+                breakdownEntries.push({
+                  trade: bd.tradeName,
+                  scopeKeyword: item.phaseGroup || "other",
+                  subCost: bd.subCost,
+                  city: estimateData.city || "",
+                  source: "breakdown_manual",
+                  estimateId: id,
+                });
+              }
+            }
+          }
+        }
+        if (breakdownEntries.length > 0) {
+          await storage.logPricing(breakdownEntries).catch(() => {});
+        }
       }
 
       res.json(estimate);
@@ -1322,6 +1366,160 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
     } catch (err: any) {
       console.error("AI generation error:", err);
       res.status(500).json({ error: err.message || "AI generation failed" });
+    }
+  });
+
+  // AI Breakdown endpoint — break a grouped line item total into per-trade amounts
+  app.post("/api/ai/breakdown", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { phaseGroup, totalSubCost, scopeDescription, city } = req.body;
+      if (!phaseGroup || totalSubCost === undefined) {
+        return res.status(400).json({ error: "phaseGroup and totalSubCost are required" });
+      }
+
+      // Get recent pricing history for context
+      let pricingContext = "No recent pricing data available.";
+      try {
+        const pricingRows = await storage.getAllRecentPricing(30);
+        if (pricingRows.length > 0) {
+          const lines = pricingRows.map(r =>
+            `${r.trade} | ${r.scopeKeyword} | $${r.subCost} | ${r.city || ""}`
+          ).join("\n");
+          pricingContext = `RECENT PRICING DATA:\n${lines}`;
+        }
+      } catch {
+        // non-fatal
+      }
+
+      const prompt = `Break down this ${phaseGroup} total sub cost of $${totalSubCost} into per-trade amounts.
+
+Scope: ${(scopeDescription || "").slice(0, 500) || "Not provided"}
+Location: ${city || "Los Angeles"}
+
+${pricingContext}
+
+Return ONLY valid JSON array with no extra text or markdown:
+[{"tradeName": "Plumbing", "subCost": 3000}, {"tradeName": "Electrical", "subCost": 2500}, ...]
+
+The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on the scope and any pricing history provided. Include only the trades relevant to ${phaseGroup}.`;
+
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const message = await anthropic.messages.create({
+        model: "claude-haiku-4-20250514",
+        max_tokens: 512,
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const textBlock = message.content.find((b: any) => b.type === "text");
+      if (!textBlock || textBlock.type !== "text") {
+        return res.status(500).json({ error: "No text response from AI" });
+      }
+
+      // Parse JSON array from response
+      const rawText = textBlock.text.trim();
+      const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        return res.status(500).json({ error: "Could not parse AI response as JSON array" });
+      }
+
+      const breakdowns = JSON.parse(jsonMatch[0]) as Array<{ tradeName: string; subCost: number }>;
+
+      // Normalize so sum equals totalSubCost exactly
+      const rawSum = breakdowns.reduce((s, b) => s + (b.subCost || 0), 0);
+      let normalizedBreakdowns = breakdowns.map(b => ({
+        tradeName: b.tradeName,
+        subCost: Math.round(b.subCost || 0),
+        notes: "",
+      }));
+      if (rawSum !== 0 && Math.abs(rawSum - totalSubCost) > 1) {
+        const scale = totalSubCost / rawSum;
+        let runningSum = 0;
+        normalizedBreakdowns = normalizedBreakdowns.map((b, i) => {
+          if (i === normalizedBreakdowns.length - 1) {
+            return { ...b, subCost: Math.round(totalSubCost - runningSum) };
+          }
+          const scaled = Math.round(b.subCost * scale);
+          runningSum += scaled;
+          return { ...b, subCost: scaled };
+        });
+      }
+
+      res.json({ breakdowns: normalizedBreakdowns });
+    } catch (err: any) {
+      console.error("AI breakdown error:", err);
+      res.status(500).json({ error: err.message || "AI breakdown failed" });
+    }
+  });
+
+  // Market rates reference data
+  const MARKET_RATES: Record<string, Record<string, { low: number; mid: number; high: number; unit: string }>> = {
+    "Plumbing": {
+      "bathroom_same": { low: 2500, mid: 3500, high: 5200, unit: "per room" },
+      "bathroom_new": { low: 5500, mid: 7500, high: 18000, unit: "per room" },
+      "kitchen_same": { low: 2000, mid: 3500, high: 6000, unit: "per room" },
+    },
+    "Electrical": {
+      "bathroom": { low: 800, mid: 1500, high: 3000, unit: "per room" },
+      "kitchen": { low: 1200, mid: 2000, high: 4000, unit: "per room" },
+    },
+    "Demolition": {
+      "bathroom_guest": { low: 800, mid: 1200, high: 1400, unit: "per room" },
+      "bathroom_primary": { low: 1400, mid: 2200, high: 4500, unit: "per room" },
+      "kitchen_small": { low: 900, mid: 1500, high: 2800, unit: "per room" },
+    },
+    "HVAC": {
+      "system": { low: 4000, mid: 8000, high: 12000, unit: "per system" },
+    },
+    "Drywall": {
+      "per_sf_l4": { low: 4.75, mid: 5.75, high: 6.75, unit: "per SF L+M" },
+      "per_sf_l5": { low: 5.50, mid: 6.50, high: 7.75, unit: "per SF L+M" },
+    },
+    "Paint": {
+      "per_room": { low: 500, mid: 1000, high: 1800, unit: "per room" },
+    },
+    "Insulation": {
+      "wall": { low: 4, mid: 6, high: 8, unit: "per SF" },
+    },
+    "Tile/Stone": {
+      "floor": { low: 7, mid: 12, high: 20, unit: "per SF labor" },
+      "shower_wall": { low: 10, mid: 16, high: 25, unit: "per SF labor" },
+    },
+    "Framing": {
+      "bathroom": { low: 600, mid: 1200, high: 2500, unit: "per room L+M" },
+      "kitchen": { low: 1800, mid: 2800, high: 4500, unit: "per room L+M" },
+    },
+  };
+
+  app.get("/api/market-rates", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const trade = (req.query.trade as string || "").trim();
+      if (!trade) {
+        return res.json({ rates: null, tradeName: trade });
+      }
+
+      // Case-insensitive partial match
+      const tradeLower = trade.toLowerCase();
+      const matchedKey = Object.keys(MARKET_RATES).find(k =>
+        k.toLowerCase() === tradeLower ||
+        k.toLowerCase().includes(tradeLower) ||
+        tradeLower.includes(k.toLowerCase())
+      );
+
+      if (!matchedKey) {
+        return res.json({ rates: null, tradeName: trade });
+      }
+
+      const subRates = MARKET_RATES[matchedKey];
+      // Aggregate: use the overall min low, max high, and average mid
+      const allRates = Object.values(subRates);
+      const low = Math.min(...allRates.map(r => r.low));
+      const high = Math.max(...allRates.map(r => r.high));
+      const mid = Math.round(allRates.reduce((s, r) => s + r.mid, 0) / allRates.length);
+      const unit = allRates[0].unit;
+
+      res.json({ rates: { low, mid, high, unit }, tradeName: matchedKey, subRates });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
