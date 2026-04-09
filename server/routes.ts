@@ -644,7 +644,7 @@ export async function registerRoutes(
       const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
       const viewUrl = `${appUrl}/#/client/${estimate.uniqueId}`;
 
-      const replySubject = subject || `Re: Your Estimate from 1 Degree Construction — ${estimate.estimateNumber}`;
+      const replySubject = subject || `Re: Your Estimate from 1 Degree Construction - ${estimate.estimateNumber}`;
       const html = `
         <div style="font-family:sans-serif;max-width:600px;">
           <p>${message.replace(/\n/g, "<br>")}</p>

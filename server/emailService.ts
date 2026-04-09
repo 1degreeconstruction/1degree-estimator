@@ -169,25 +169,23 @@ export function buildEstimateEmail(opts: {
   clientName: string; senderName: string; estimateNumber: string;
   projectAddress: string; totalClientPrice: number; viewUrl: string; validUntil: string;
 }): { subject: string; html: string } {
-  const subject = `Your Estimate from 1 Degree Construction — ${opts.estimateNumber}`;
-  const formatted = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(opts.totalClientPrice);
+  const subject = `Your Estimate from 1 Degree Construction - ${opts.estimateNumber}`;
   const validDate = opts.validUntil ? new Date(opts.validUntil).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "";
   const html = wrapper(`
     <p style="margin:0 0 8px;font-size:15px;color:#333;">Hi ${opts.clientName},</p>
     <p style="margin:0 0 24px;font-size:15px;color:#555;line-height:1.6;">
-      Thank you for choosing 1 Degree Construction. Please find your estimate for the project at
-      <strong>${opts.projectAddress}</strong> attached below.
+      Thank you for choosing 1 Degree Construction. Your estimate for the project at
+      <strong>${opts.projectAddress}</strong> is ready for your review.
     </p>
     <div style="border:1px solid #e5e5e5;border-radius:8px;padding:24px;margin-bottom:28px;background:#fafafa;">
       <div style="font-size:13px;color:#999;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Estimate</div>
-      <div style="font-size:20px;font-weight:700;color:#0a0a0a;margin-bottom:16px;">${opts.estimateNumber}</div>
-      <div><div style="font-size:12px;color:#999;margin-bottom:2px;">Total</div><div style="font-size:22px;font-weight:700;color:#e87722;">${formatted}</div></div>
-      ${validDate ? `<div style="margin-top:12px;"><div style="font-size:12px;color:#999;margin-bottom:2px;">Valid Until</div><div style="font-size:15px;font-weight:600;color:#333;">${validDate}</div></div>` : ""}
+      <div style="font-size:20px;font-weight:700;color:#0a0a0a;margin-bottom:8px;">${opts.estimateNumber}</div>
+      ${validDate ? `<div style="font-size:13px;color:#999;">Valid until ${validDate}</div>` : ""}
     </div>
     <div style="text-align:center;margin-bottom:28px;">
       <a href="${opts.viewUrl}" style="display:inline-block;background:#e87722;color:#fff;padding:14px 36px;border-radius:6px;font-size:15px;font-weight:600;text-decoration:none;">Review &amp; Sign Estimate</a>
     </div>
-    <p style="margin:0 0 4px;font-size:14px;color:#666;line-height:1.6;">The link above will take you to a secure page where you can review all project details and sign electronically.</p>
+    <p style="margin:0 0 4px;font-size:14px;color:#666;line-height:1.6;">Click the button above to view the full estimate details, scope of work, payment schedule, and sign electronically.</p>
     <p style="margin:0;font-size:14px;color:#666;line-height:1.6;">Questions? Reply to this email or call us directly.</p>
     <div style="margin-top:28px;padding-top:20px;border-top:1px solid #eee;">
       <p style="margin:0;font-size:14px;color:#333;">Best regards,<br><strong>${opts.senderName}</strong><br>1 Degree Construction</p>
@@ -200,7 +198,7 @@ export function buildFollowUpEmail(opts: {
   clientName: string; senderName: string; estimateNumber: string;
   projectAddress: string; viewUrl: string; daysSinceSent: number;
 }): { subject: string; html: string } {
-  const subject = `Following Up — Estimate ${opts.estimateNumber} | 1 Degree Construction`;
+  const subject = `Following Up - Estimate ${opts.estimateNumber} | 1 Degree Construction`;
   const html = wrapper(`
     <p style="margin:0 0 8px;font-size:15px;color:#333;">Hi ${opts.clientName},</p>
     <p style="margin:0 0 24px;font-size:15px;color:#555;line-height:1.6;">
