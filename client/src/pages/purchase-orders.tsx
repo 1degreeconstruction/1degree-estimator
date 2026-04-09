@@ -177,7 +177,10 @@ function UploadZone({ onUpload }: { onUpload: (file: File, estimateId?: string, 
                   <SelectItem value="none">None</SelectItem>
                   {estimates?.map(e => (
                     <SelectItem key={e.id} value={String(e.id)}>
-                      {e.estimateNumber} — {e.clientName}
+                      <div className="flex flex-col">
+                        <span className="text-sm">{e.clientName} — {e.projectAddress}</span>
+                        <span className="text-[10px] text-muted-foreground">{e.estimateNumber}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
