@@ -263,6 +263,8 @@ export async function registerRoutes(
       { method: "GET", pattern: /^\/reviews$/ },
       { method: "GET", pattern: /^\/places\// },
       { method: "GET", pattern: /^\/sales-reps$/ },
+      { method: "GET", pattern: /^\/estimates\/public\/.*\/messages$/ },
+      { method: "POST", pattern: /^\/estimates\/public\/.*\/messages$/ },
     ];
 
     for (const route of publicRoutes) {

@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 import { AdminLayout } from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -393,11 +394,14 @@ export default function EstimateForm() {
   }, [existingEstimate]);
 
   // Set default sales rep
+  const { user } = useAuth();
   useEffect(() => {
     if (salesReps?.length && !salesRepId) {
-      setSalesRepId(salesReps[0].id);
+      // Auto-select the rep matching the signed-in user's email
+      const match = user?.email ? salesReps.find(r => r.email.toLowerCase() === user.email.toLowerCase()) : null;
+      setSalesRepId(match ? match.id : salesReps[0].id);
     }
-  }, [salesReps, salesRepId]);
+  }, [salesReps, salesRepId, user]);
 
   // Auto-calculations
   const calculations = useMemo(() => {
@@ -821,7 +825,7 @@ export default function EstimateForm() {
                   </div>
                   <div>
                     <Label htmlFor="salesRep">Sales Rep</Label>
-                    <Select value={String(salesRepId)} onValueChange={v => setSalesRepId(Number(v))}>
+                    <Select value={salesRepId ? String(salesRepId) : undefined} onValueChange={v => setSalesRepId(Number(v))}>
                       <SelectTrigger data-testid="select-sales-rep">
                         <SelectValue placeholder="Select rep..." />
                       </SelectTrigger>
