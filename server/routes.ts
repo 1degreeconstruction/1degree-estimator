@@ -1991,10 +1991,17 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
       // Try to extract JSON from the response (may be wrapped in markdown code blocks)
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        return res.status(500).json({ error: "Could not parse AI response as JSON" });
+        console.error("[ai/generate] No JSON found in response:", responseText.slice(0, 500));
+        return res.status(422).json({ error: "The AI response wasn't in the expected format. Please try again — sometimes rephrasing the prompt helps." });
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch (parseErr: any) {
+        console.error("[ai/generate] JSON parse error:", parseErr.message, responseText.slice(0, 500));
+        return res.status(422).json({ error: "The AI returned malformed data. Please try again." });
+      }
 
       // Append to ai_log if estimateId was provided
       if (estimateId) {
@@ -2013,8 +2020,11 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
 
       res.json(parsed);
     } catch (err: any) {
-      console.error("AI generation error:", err);
-      res.status(500).json({ error: err.message || "AI generation failed" });
+      console.error("[ai/generate] error:", err.message || err);
+      const msg = err.message?.includes("rate") ? "AI rate limit hit. Wait a moment and try again."
+        : err.message?.includes("timeout") ? "AI request timed out. Try a shorter prompt."
+        : "AI generation failed. Please try again.";
+      res.status(err.status || 500).json({ error: msg });
     }
   });
 
@@ -2069,10 +2079,16 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
       const rawText = textBlock.text.trim();
       const jsonMatch = rawText.match(/\[[\s\S]*\]/);
       if (!jsonMatch) {
-        return res.status(500).json({ error: "Could not parse AI response as JSON array" });
+        console.error("[ai/breakdown] No JSON array in response:", rawText.slice(0, 300));
+        return res.status(422).json({ error: "Could not generate breakdown. Try again." });
       }
 
-      const breakdowns = JSON.parse(jsonMatch[0]) as Array<{ tradeName: string; subCost: number }>;
+      let breakdowns: Array<{ tradeName: string; subCost: number }>;
+      try {
+        breakdowns = JSON.parse(jsonMatch[0]);
+      } catch {
+        return res.status(422).json({ error: "AI returned malformed breakdown data. Try again." });
+      }
 
       // Normalize so sum equals totalSubCost exactly
       const rawSum = breakdowns.reduce((s, b) => s + (b.subCost || 0), 0);
@@ -2096,8 +2112,8 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
 
       res.json({ breakdowns: normalizedBreakdowns });
     } catch (err: any) {
-      console.error("AI breakdown error:", err);
-      res.status(500).json({ error: err.message || "AI breakdown failed" });
+      console.error("[ai/breakdown] error:", err.message || err);
+      res.status(err.status || 500).json({ error: "Breakdown generation failed. Please try again." });
     }
   });
 
