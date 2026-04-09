@@ -20,6 +20,7 @@ import PurchaseOrders from "@/pages/purchase-orders";
 import PricingDashboard from "@/pages/pricing-dashboard";
 import TeamInbox from "@/pages/team-inbox";
 import TeamChat from "@/pages/team-chat";
+import ErrorLog from "@/pages/error-log";
 import { useAuth } from "@/hooks/use-auth";
 import { setToken } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -124,6 +125,13 @@ function AppRouter() {
         {() => (
           <AuthGuard>
             <TeamInbox />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/admin/errors">
+        {() => (
+          <AuthGuard>
+            <ErrorLog />
           </AuthGuard>
         )}
       </Route>

@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useTheme } from "./theme-provider";
-import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X, Users, LogOut, MessageSquare, Upload, Database, Inbox, MessageCircle } from "lucide-react";
+import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X, Users, LogOut, MessageSquare, Upload, Database, Inbox, MessageCircle, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     { href: "/chat", label: "Client Chat", icon: MessageCircle },
     { href: "/inbox", label: "Inbox", icon: Inbox },
     ...(isAdmin ? [{ href: "/admin/users", label: "Team", icon: Users }] : []),
+    ...(isAdmin ? [{ href: "/admin/errors", label: "Error Log", icon: AlertTriangle }] : []),
   ];
 
   return (

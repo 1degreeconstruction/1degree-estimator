@@ -15,15 +15,38 @@ function getOAuthClient(accessToken: string, refreshToken: string | null): OAuth
 }
 
 async function gmailFetch(client: OAuth2Client, path: string, opts: RequestInit = {}): Promise<any> {
-  const token = await client.getAccessToken();
+  // getAccessToken() auto-refreshes if expired
+  const { token } = await client.getAccessToken();
+  if (!token) throw new Error("Could not obtain access token — user may need to re-login");
+
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1${path}`, {
     ...opts,
     headers: {
-      "Authorization": `Bearer ${token.token}`,
+      "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
       ...(opts.headers || {}),
     },
   });
+
+  if (res.status === 401) {
+    // Token was stale even after refresh — force a new one
+    const refreshed = await client.refreshAccessToken().catch(() => null);
+    if (refreshed?.credentials?.access_token) {
+      const retry = await fetch(`https://gmail.googleapis.com/gmail/v1${path}`, {
+        ...opts,
+        headers: {
+          "Authorization": `Bearer ${refreshed.credentials.access_token}`,
+          "Content-Type": "application/json",
+          ...(opts.headers || {}),
+        },
+      });
+      if (retry.ok) return retry.json();
+      const body = await retry.text();
+      throw new Error(`Gmail API ${retry.status} (after refresh): ${body}`);
+    }
+    throw new Error("Gmail token expired and refresh failed. User needs to sign out and back in.");
+  }
+
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Gmail API ${res.status}: ${body}`);
