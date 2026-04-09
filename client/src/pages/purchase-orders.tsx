@@ -222,6 +222,7 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
   const [clarifySubmitted, setClarifySubmitted] = useState(false);
   const [clarifyLoading, setClarifyLoading] = useState(false);
   const [qtyModified, setQtyModified] = useState<Set<number>>(new Set());
+  const [costModified, setCostModified] = useState<Set<number>>(new Set());
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -527,7 +528,7 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
                           </td>
                           <td className="py-1.5 pr-2">
                             <Input
-                              className="h-7 text-xs text-right w-24"
+                              className={`h-7 text-xs text-right w-24 ${costModified.has(idx) ? 'border-amber-500 ring-1 ring-amber-500/30' : ''}`}
                               type="number"
                               min="0"
                               step="0.01"
@@ -538,6 +539,7 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
                                 const newItems = [...editedItems];
                                 newItems[idx] = { ...item, unitCost: uc, amount: Math.round(qty * uc * 100) / 100 };
                                 setEditedItems(newItems);
+                                setCostModified(prev => new Set(prev).add(idx));
                               }}
                             />
                           </td>
@@ -635,17 +637,21 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
             )}
 
             {/* Qty modification warning */}
-            {canConfirm && qtyModified.size > 0 && (
+            {canConfirm && (qtyModified.size > 0 || costModified.size > 0) && (
               <div className="border border-amber-500/30 bg-amber-500/5 rounded-md p-3 space-y-2">
-                <p className="text-xs font-medium text-amber-500">⚠ Quantity was manually changed on {qtyModified.size} line item{qtyModified.size > 1 ? 's' : ''}</p>
-                <p className="text-[10px] text-muted-foreground">Changed quantities affect per-unit pricing in the database. Review the total amounts below before confirming.</p>
+                <p className="text-xs font-medium text-amber-500">⚠ Pricing was manually changed on {new Set([...qtyModified, ...costModified]).size} line item{new Set([...qtyModified, ...costModified]).size > 1 ? 's' : ''}</p>
+                <p className="text-[10px] text-muted-foreground">Changed quantities and unit costs affect pricing in the database. Review the totals below before confirming.</p>
                 <div className="text-[10px] space-y-0.5">
-                  {Array.from(qtyModified).map(idx => {
+                  {Array.from(new Set([...qtyModified, ...costModified])).map(idx => {
                     const item = editedItems[idx];
                     if (!item) return null;
                     return (
                       <div key={idx} className="flex justify-between text-amber-400">
-                        <span>{item.trade} — {item.description?.slice(0, 40)}</span>
+                        <span>
+                          {item.trade} — {item.description?.slice(0, 40)}
+                          {qtyModified.has(idx) && <span className="ml-1 text-[9px] bg-amber-500/20 px-1 rounded">QTY</span>}
+                          {costModified.has(idx) && <span className="ml-1 text-[9px] bg-amber-500/20 px-1 rounded">RATE</span>}
+                        </span>
                         <span>Qty: {item.quantity} × ${item.unitCost?.toLocaleString()} = ${item.amount.toLocaleString()}</span>
                       </div>
                     );
@@ -655,7 +661,7 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
                   size="sm"
                   variant="outline"
                   className="text-xs border-amber-500/50 text-amber-500"
-                  onClick={() => setQtyModified(new Set())}
+                  onClick={() => { setQtyModified(new Set()); setCostModified(new Set()); }}
                 >
                   I've reviewed — clear flags
                 </Button>
@@ -666,7 +672,7 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
             {canConfirm && (
               <Button
                 onClick={() => confirmMutation.mutate()}
-                disabled={confirmMutation.isPending || qtyModified.size > 0}
+                disabled={confirmMutation.isPending || qtyModified.size > 0 || costModified.size > 0}
                 className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
               >
                 {confirmMutation.isPending ? (
@@ -674,7 +680,7 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
                 ) : (
                   <CheckCircle className="w-4 h-4" />
                 )}
-                {qtyModified.size > 0 ? 'Review qty changes above first' : 'Confirm & Add to Pricing Database'}
+                {(qtyModified.size > 0 || costModified.size > 0) ? 'Review changes above first' : 'Confirm & Add to Pricing Database'}
               </Button>
             )}
           </div>
