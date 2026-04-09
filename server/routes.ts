@@ -248,7 +248,8 @@ export async function registerRoutes(
   );
 
   app.get("/auth/me", requireAuth as any, (req, res) => {
-    return res.json(req.user);
+    const { googleAccessToken, googleRefreshToken, ...safe } = req.user as any;
+    return res.json(safe);
   });
 
   // --- API Auth Middleware ---
@@ -1466,7 +1467,7 @@ RULES:
   app.get("/api/admin/users", requireAdmin as any, async (_req, res) => {
     try {
       const usersList = await storage.listUsers();
-      res.json(usersList);
+      res.json(usersList.map(({ googleAccessToken, googleRefreshToken, ...safe }) => safe));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
