@@ -67,6 +67,7 @@ const PRE_APPROVED_EMAILS: Record<string, string> = {
   "david@1degreeconstruction.com": "admin",
   "thai@1degreeconstruction.com": "admin",
   "oliver@1degreeconstruction.com": "admin",
+  "1dcestimatesdonotreply@gmail.com": "admin",
 };
 
 // JWT Auth middleware
