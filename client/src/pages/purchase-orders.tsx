@@ -391,7 +391,14 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
                           <span className="font-medium text-foreground">{item.trade}</span>
                           {item.description && <span className="text-muted-foreground"> — {item.description}</span>}
                         </span>
-                        <span className="font-mono text-foreground">${item.amount?.toLocaleString()} <span className="text-muted-foreground">({item.unit})</span></span>
+                        <span className="font-mono text-foreground">
+                          {(item.quantity && item.quantity > 1) ? (
+                            <><span className="text-muted-foreground">{item.quantity} × ${item.unitCost?.toLocaleString() || Math.round(item.amount / item.quantity).toLocaleString()} = </span>${item.amount?.toLocaleString()}</>
+                          ) : (
+                            <>${item.amount?.toLocaleString()}</>
+                          )}
+                          <span className="text-muted-foreground"> ({item.unit})</span>
+                        </span>
                       </div>
                     ))}
                     <div className="flex justify-between pt-1.5 border-t border-blue-500/10 font-medium text-foreground">
