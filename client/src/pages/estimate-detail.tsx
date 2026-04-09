@@ -283,7 +283,7 @@ export default function EstimateDetailPage() {
                 <Edit className="w-4 h-4" /> Edit
               </Button>
             </Link>
-            {(estimate.status === "draft" || estimate.status === "viewed") && (
+            {estimate.status !== "approved" && (
               <Button
                 size="sm"
                 className="gap-2 bg-orange-600 hover:bg-orange-700"
@@ -293,7 +293,7 @@ export default function EstimateDetailPage() {
                 data-testid="button-email-client"
               >
                 <Send className="w-4 h-4" />
-                {emailMutation.isPending ? "Sending..." : estimate.status === "draft" ? "Email to Client" : "Re-send Email"}
+                {emailMutation.isPending ? "Sending..." : estimate.status === "draft" ? "Email to Client" : "Resend"}
               </Button>
             )}
           </div>

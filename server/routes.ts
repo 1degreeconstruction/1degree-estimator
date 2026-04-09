@@ -342,26 +342,26 @@ export async function registerRoutes(
       const estimate = await storage.getEstimateByUniqueId(req.params.uniqueId);
       if (!estimate) return res.status(404).json({ error: "Not found" });
 
-      // Log view event
+      // Log view event — first view changes status, every view logs activity
+      const viewedAt = new Date();
       if (estimate.status === "sent") {
-        const viewedAt = new Date();
         await storage.updateEstimate(estimate.id, { status: "viewed", viewedAt });
-        await storage.createEvent({ estimateId: estimate.id, eventType: "viewed", timestamp: viewedAt, metadata: req.ip || null });
-        // Notify team inbox
-        await storage.logEmail({
-          estimateId: estimate.id,
-          recipientEmail: "team",
-          fromEmail: estimate.clientEmail || "",
-          fromName: estimate.clientName,
-          subject: `👀 ${estimate.clientName} viewed estimate ${estimate.estimateNumber}`,
-          bodyPreview: `${estimate.clientName} opened the estimate for ${estimate.projectAddress}.`,
-          direction: "inbound",
-          emailType: "internal_notification",
-          status: "received",
-          isRead: false,
-          sentAt: viewedAt,
-        }).catch(() => {});
       }
+      // Always log the view (even repeat views)
+      await storage.createEvent({ estimateId: estimate.id, eventType: "viewed", timestamp: viewedAt, metadata: req.ip || null }).catch(() => {});
+      await storage.logEmail({
+        estimateId: estimate.id,
+        recipientEmail: "team",
+        fromEmail: estimate.clientEmail || "",
+        fromName: estimate.clientName,
+        subject: `\uD83D\uDC40 ${estimate.clientName} viewed estimate ${estimate.estimateNumber}`,
+        bodyPreview: `${estimate.clientName} opened the estimate for ${estimate.projectAddress}.`,
+        direction: "inbound",
+        emailType: "internal_notification",
+        status: "received",
+        isRead: false,
+        sentAt: viewedAt,
+      }).catch(() => {});
 
       const [salesRep, items, milestones] = await Promise.all([
         storage.getSalesRep(estimate.salesRepId),
