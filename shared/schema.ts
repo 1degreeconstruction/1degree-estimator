@@ -195,6 +195,20 @@ export const insertPricingHistorySchema = createInsertSchema(pricingHistory).omi
 export type InsertPricingHistory = z.infer<typeof insertPricingHistorySchema>;
 export type PricingHistory = typeof pricingHistory.$inferSelect;
 
+// Line Item Breakdowns (internal trade-level breakdown for grouped phases)
+export const lineItemBreakdowns = pgTable("line_item_breakdowns", {
+  id: serial("id").primaryKey(),
+  lineItemId: integer("line_item_id").notNull(),
+  tradeName: text("trade_name").notNull(),
+  subCost: real("sub_cost").notNull().default(0),
+  notes: text("notes"),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const insertLineItemBreakdownSchema = createInsertSchema(lineItemBreakdowns).omit({ id: true });
+export type InsertLineItemBreakdown = z.infer<typeof insertLineItemBreakdownSchema>;
+export type LineItemBreakdown = typeof lineItemBreakdowns.$inferSelect;
+
 // Phase group constants
 export const PHASE_GROUPS = [
   { value: "permit_design", label: "Permit & Design" },

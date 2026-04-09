@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Edit, ExternalLink, Copy, Send, ArrowLeft,
-  Clock, Eye, CheckCircle, AlertCircle, FileText, Download
+  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers
 } from "lucide-react";
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getStatusLabel } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -216,20 +216,42 @@ export default function EstimateDetailPage() {
                     </thead>
                     <tbody>
                       {sortedItems.map((item, idx) => (
-                        <tr key={item.id} className="border-b last:border-0" data-testid={`row-line-item-${idx}`}>
-                          <td className="py-3 pr-4 align-top">
-                            <span className="text-xs font-medium">{getPhaseLabel(item.phaseGroup, (item as any).customPhaseLabel)}</span>
-                            {item.isGrouped && (
-                              <span className="ml-1 text-xs text-primary">(grouped)</span>
-                            )}
-                          </td>
-                          <td className="py-3 pr-4 align-top text-muted-foreground">{item.scopeDescription}</td>
-                          <td className="py-3 pr-4 text-right align-top font-mono text-xs">{formatCurrency(item.subCost)}</td>
-                          <td className="py-3 pr-4 text-right align-top font-mono text-xs">{formatCurrency(item.clientPrice)}</td>
-                          <td className="py-3 text-right align-top font-mono text-xs text-green-600 dark:text-green-400">
-                            {formatCurrency(item.clientPrice - item.subCost)}
-                          </td>
-                        </tr>
+                        <>
+                          <tr key={item.id} className="border-b last:border-0" data-testid={`row-line-item-${idx}`}>
+                            <td className="py-3 pr-4 align-top">
+                              <span className="text-xs font-medium">{getPhaseLabel(item.phaseGroup, (item as any).customPhaseLabel)}</span>
+                              {item.isGrouped && (
+                                <span className="ml-1 inline-flex items-center gap-0.5 text-xs text-primary">
+                                  <Layers className="w-3 h-3" />
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 pr-4 align-top text-muted-foreground">{item.scopeDescription}</td>
+                            <td className="py-3 pr-4 text-right align-top font-mono text-xs">{formatCurrency(item.subCost)}</td>
+                            <td className="py-3 pr-4 text-right align-top font-mono text-xs">{formatCurrency(item.clientPrice)}</td>
+                            <td className="py-3 text-right align-top font-mono text-xs text-green-600 dark:text-green-400">
+                              {formatCurrency(item.clientPrice - item.subCost)}
+                            </td>
+                          </tr>
+                          {/* Breakdown sub-rows for grouped items */}
+                          {item.isGrouped && (item as any).breakdowns && (item as any).breakdowns.length > 0 &&
+                            (item as any).breakdowns.map((bd: any, bdIdx: number) => (
+                              <tr key={`${item.id}-bd-${bdIdx}`} className="border-b last:border-0 bg-muted/30" data-testid={`row-breakdown-${idx}-${bdIdx}`}>
+                                <td className="py-1.5 pr-4 pl-6 align-top">
+                                  <span className="text-xs text-muted-foreground">{bd.tradeName}</span>
+                                </td>
+                                <td className="py-1.5 pr-4 align-top text-xs text-muted-foreground italic">
+                                  {bd.notes || ""}
+                                </td>
+                                <td className="py-1.5 pr-4 text-right align-top font-mono text-xs text-muted-foreground">
+                                  {formatCurrency(bd.subCost)}
+                                </td>
+                                <td className="py-1.5 pr-4" />
+                                <td className="py-1.5" />
+                              </tr>
+                            ))
+                          }
+                        </>
                       ))}
                     </tbody>
                   </table>

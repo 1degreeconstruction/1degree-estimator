@@ -247,14 +247,26 @@ export async function registerRoutes(
       const estimate = await storage.getEstimate(id);
       if (!estimate) return res.status(404).json({ error: "Not found" });
 
-      const [salesRep, items, milestones, events] = await Promise.all([
+      const [salesRep, items, milestones, events, allBreakdowns] = await Promise.all([
         storage.getSalesRep(estimate.salesRepId),
         storage.getLineItems(id),
         storage.getMilestones(id),
         storage.getEvents(id),
+        storage.getBreakdownsByEstimate(id),
       ]);
 
-      res.json({ ...estimate, salesRep, lineItems: items, milestones, events });
+      // Attach breakdowns to each line item
+      const breakdownsByLineItem: Record<number, any[]> = {};
+      for (const bd of allBreakdowns) {
+        if (!breakdownsByLineItem[bd.lineItemId]) breakdownsByLineItem[bd.lineItemId] = [];
+        breakdownsByLineItem[bd.lineItemId].push(bd);
+      }
+      const itemsWithBreakdowns = items.map(item => ({
+        ...item,
+        breakdowns: breakdownsByLineItem[item.id] || [],
+      }));
+
+      res.json({ ...estimate, salesRep, lineItems: itemsWithBreakdowns, milestones, events });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -501,7 +513,7 @@ RULES:
       // Create line items
       if (items && items.length > 0) {
         for (const item of items) {
-          await storage.createLineItem({
+          const createdItem = await storage.createLineItem({
             estimateId: estimate.id,
             sortOrder: item.sortOrder,
             phaseGroup: item.phaseGroup,
@@ -511,6 +523,19 @@ RULES:
             clientPrice: item.subCost * 2,
             isGrouped: item.isGrouped || false,
           });
+          // Create breakdowns for grouped items
+          if (item.isGrouped && item.breakdowns && item.breakdowns.length > 0) {
+            for (let bdIdx = 0; bdIdx < item.breakdowns.length; bdIdx++) {
+              const bd = item.breakdowns[bdIdx];
+              await storage.createBreakdown({
+                lineItemId: createdItem.id,
+                tradeName: bd.tradeName,
+                subCost: bd.subCost || 0,
+                notes: bd.notes || null,
+                sortOrder: bdIdx,
+              });
+            }
+          }
         }
       }
 
@@ -608,11 +633,11 @@ RULES:
 
       if (!estimate) return res.status(404).json({ error: "Not found" });
 
-      // Replace line items
+      // Replace line items (deleteLineItemsByEstimate also cascades breakdowns)
       await storage.deleteLineItemsByEstimate(id);
       if (items && items.length > 0) {
         for (const item of items) {
-          await storage.createLineItem({
+          const createdItem = await storage.createLineItem({
             estimateId: id,
             sortOrder: item.sortOrder,
             phaseGroup: item.phaseGroup,
@@ -622,6 +647,19 @@ RULES:
             clientPrice: item.subCost * 2,
             isGrouped: item.isGrouped || false,
           });
+          // Create breakdowns for grouped items
+          if (item.isGrouped && item.breakdowns && item.breakdowns.length > 0) {
+            for (let bdIdx = 0; bdIdx < item.breakdowns.length; bdIdx++) {
+              const bd = item.breakdowns[bdIdx];
+              await storage.createBreakdown({
+                lineItemId: createdItem.id,
+                tradeName: bd.tradeName,
+                subCost: bd.subCost || 0,
+                notes: bd.notes || null,
+                sortOrder: bdIdx,
+              });
+            }
+          }
         }
       }
 
@@ -1044,6 +1082,12 @@ Project Exclusions should list what is NOT included that the client might expect
 Format: One item per line, starting with bullet character •
 Learn from previous estimates — check pricing_history and existing estimates to see what inclusions/exclusions are commonly used for similar project types.
 
+=== TRADE BREAKDOWN RULE ===
+For grouped phases (mep, insulation_drywall_paint, tile_finish_carpentry), ALWAYS include a "breakdowns" array with per-trade sub costs. The sum of breakdowns must equal the line item subCost.
+- mep breakdowns: Plumbing, Electrical, HVAC
+- insulation_drywall_paint breakdowns: Insulation, Drywall, Paint
+- tile_finish_carpentry breakdowns: Tile/Stone, Cabinetry, Finish Carpentry
+
 Return ONLY valid JSON in this exact format:
 {
   "clientName": "",
@@ -1062,14 +1106,19 @@ Return ONLY valid JSON in this exact format:
       "customPhaseLabel": "only if phaseGroup is other, otherwise null",
       "scopeDescription": "detailed scope text with bullet points",
       "subCost": number,
-      "isGrouped": true/false
+      "isGrouped": true/false,
+      "breakdowns": [
+        { "tradeName": "string", "subCost": number, "notes": "" }
+      ]
     }
   ],
   "milestones": [
     { "milestoneName": "string", "amount": number }
   ],
   "notesInternal": "internal notes"
-}`;
+}
+Note: "breakdowns" is required for isGrouped=true line items. For non-grouped items, omit or set breakdowns to [].
+`;
 
   const AI_REWRITE_SYSTEM_PROMPT = `You are the estimating AI for 1 Degree Construction. You are editing an EXISTING estimate.
 
@@ -1103,6 +1152,12 @@ Project Exclusions should list what is NOT included that the client might expect
 
 Format: One item per line, starting with bullet character •
 
+=== TRADE BREAKDOWN RULE ===
+For grouped phases (mep, insulation_drywall_paint, tile_finish_carpentry), ALWAYS include a "breakdowns" array with per-trade sub costs. The sum of breakdowns must equal the line item subCost.
+- mep breakdowns: Plumbing, Electrical, HVAC
+- insulation_drywall_paint breakdowns: Insulation, Drywall, Paint
+- tile_finish_carpentry breakdowns: Tile/Stone, Cabinetry, Finish Carpentry
+
 Return ONLY valid JSON in this exact format:
 {
   "clientName": "",
@@ -1121,14 +1176,19 @@ Return ONLY valid JSON in this exact format:
       "customPhaseLabel": "only if phaseGroup is other, otherwise null",
       "scopeDescription": "detailed scope text with bullet points",
       "subCost": number,
-      "isGrouped": true/false
+      "isGrouped": true/false,
+      "breakdowns": [
+        { "tradeName": "string", "subCost": number, "notes": "" }
+      ]
     }
   ],
   "milestones": [
     { "milestoneName": "string", "amount": number }
   ],
   "notesInternal": "internal notes"
-}`;
+}
+Note: "breakdowns" is required for isGrouped=true line items. For non-grouped items, omit or set breakdowns to [].
+`;
 
   app.post("/api/ai/generate-estimate", async (req, res) => {
     try {

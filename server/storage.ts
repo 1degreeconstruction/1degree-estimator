@@ -2,6 +2,7 @@ import {
   type SalesRep, type InsertSalesRep, salesReps,
   type Estimate, type InsertEstimate, estimates,
   type LineItem, type InsertLineItem, lineItems,
+  type LineItemBreakdown, type InsertLineItemBreakdown, lineItemBreakdowns,
   type PaymentMilestone, type InsertMilestone, paymentMilestones,
   type EstimateEvent, type InsertEvent, estimateEvents,
   type User, type InsertUser, users,
@@ -36,6 +37,12 @@ export interface IStorage {
   getLineItems(estimateId: number): Promise<LineItem[]>;
   createLineItem(item: InsertLineItem): Promise<LineItem>;
   deleteLineItemsByEstimate(estimateId: number): Promise<void>;
+
+  // Line Item Breakdowns
+  getBreakdownsByLineItem(lineItemId: number): Promise<LineItemBreakdown[]>;
+  getBreakdownsByEstimate(estimateId: number): Promise<LineItemBreakdown[]>;
+  createBreakdown(breakdown: InsertLineItemBreakdown): Promise<LineItemBreakdown>;
+  deleteBreakdownsByLineItem(lineItemId: number): Promise<void>;
 
   // Payment Milestones
   getMilestones(estimateId: number): Promise<PaymentMilestone[]>;
@@ -120,7 +127,39 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteLineItemsByEstimate(estimateId: number): Promise<void> {
+    // Cascade: delete breakdowns for all line items in this estimate first
+    const items = await this.getLineItems(estimateId);
+    for (const item of items) {
+      await db.delete(lineItemBreakdowns).where(eq(lineItemBreakdowns.lineItemId, item.id));
+    }
     await db.delete(lineItems).where(eq(lineItems.estimateId, estimateId));
+  }
+
+  // Line Item Breakdowns
+  async getBreakdownsByLineItem(lineItemId: number): Promise<LineItemBreakdown[]> {
+    return db.select().from(lineItemBreakdowns)
+      .where(eq(lineItemBreakdowns.lineItemId, lineItemId))
+      .orderBy(lineItemBreakdowns.sortOrder);
+  }
+
+  async getBreakdownsByEstimate(estimateId: number): Promise<LineItemBreakdown[]> {
+    // Join via line_items
+    const items = await this.getLineItems(estimateId);
+    const allBreakdowns: LineItemBreakdown[] = [];
+    for (const item of items) {
+      const bds = await this.getBreakdownsByLineItem(item.id);
+      allBreakdowns.push(...bds);
+    }
+    return allBreakdowns;
+  }
+
+  async createBreakdown(breakdown: InsertLineItemBreakdown): Promise<LineItemBreakdown> {
+    const rows = await db.insert(lineItemBreakdowns).values(breakdown).returning();
+    return rows[0];
+  }
+
+  async deleteBreakdownsByLineItem(lineItemId: number): Promise<void> {
+    await db.delete(lineItemBreakdowns).where(eq(lineItemBreakdowns.lineItemId, lineItemId));
   }
 
   // Payment Milestones
@@ -242,6 +281,19 @@ async function initializeDb() {
         estimate_id INTEGER,
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS line_item_breakdowns (
+        id SERIAL PRIMARY KEY,
+        line_item_id INTEGER NOT NULL REFERENCES line_items(id) ON DELETE CASCADE,
+        trade_name TEXT NOT NULL,
+        sub_cost REAL NOT NULL DEFAULT 0,
+        notes TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_breakdowns_line_item ON line_item_breakdowns(line_item_id);
     `);
     console.log("DB initialization complete.");
   } catch (err) {

@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2, MessageSquare } from "lucide-react";
+import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2, MessageSquare, Layers } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { formatCurrency } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -20,6 +20,12 @@ import type { SalesRep, Estimate, LineItem, PaymentMilestone } from "@shared/sch
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 
+interface BreakdownForm {
+  tradeName: string;
+  subCost: number;
+  notes: string;
+}
+
 interface LineItemForm {
   phaseGroup: string;
   customPhaseLabel: string;
@@ -27,7 +33,26 @@ interface LineItemForm {
   subCost: number;
   isGrouped: boolean;
   sortOrder: number;
+  breakdowns: BreakdownForm[];
 }
+
+const DEFAULT_BREAKDOWNS: Record<string, BreakdownForm[]> = {
+  mep: [
+    { tradeName: "Plumbing", subCost: 0, notes: "" },
+    { tradeName: "Electrical", subCost: 0, notes: "" },
+    { tradeName: "HVAC", subCost: 0, notes: "" },
+  ],
+  insulation_drywall_paint: [
+    { tradeName: "Insulation", subCost: 0, notes: "" },
+    { tradeName: "Drywall", subCost: 0, notes: "" },
+    { tradeName: "Paint", subCost: 0, notes: "" },
+  ],
+  tile_finish_carpentry: [
+    { tradeName: "Tile/Stone", subCost: 0, notes: "" },
+    { tradeName: "Cabinetry", subCost: 0, notes: "" },
+    { tradeName: "Finish Carpentry", subCost: 0, notes: "" },
+  ],
+};
 
 interface MilestoneForm {
   milestoneName: string;
@@ -120,14 +145,32 @@ export default function EstimateForm() {
       if (data.projectExclusions !== undefined) setProjectExclusions(data.projectExclusions || "");
 
       if (data.lineItems && Array.isArray(data.lineItems)) {
-        setItems(data.lineItems.map((li: any, idx: number) => ({
-          phaseGroup: li.phaseGroup || "other",
-          customPhaseLabel: li.customPhaseLabel || "",
-          scopeDescription: li.scopeDescription || "",
-          subCost: li.subCost || 0,
-          isGrouped: li.isGrouped || false,
-          sortOrder: idx,
-        })));
+        setItems(data.lineItems.map((li: any, idx: number) => {
+          const isGrouped = li.isGrouped || false;
+          const phaseGroup = li.phaseGroup || "other";
+          let breakdowns: BreakdownForm[] = [];
+          if (isGrouped) {
+            if (li.breakdowns && Array.isArray(li.breakdowns) && li.breakdowns.length > 0) {
+              breakdowns = li.breakdowns.map((bd: any) => ({
+                tradeName: bd.tradeName || "",
+                subCost: bd.subCost || 0,
+                notes: bd.notes || "",
+              }));
+            } else if (DEFAULT_BREAKDOWNS[phaseGroup]) {
+              // Fallback to defaults with zero costs if AI didn't provide breakdowns
+              breakdowns = DEFAULT_BREAKDOWNS[phaseGroup].map(bd => ({ ...bd }));
+            }
+          }
+          return {
+            phaseGroup,
+            customPhaseLabel: li.customPhaseLabel || "",
+            scopeDescription: li.scopeDescription || "",
+            subCost: li.subCost || 0,
+            isGrouped,
+            sortOrder: idx,
+            breakdowns,
+          };
+        }));
       }
 
       if (data.milestones && Array.isArray(data.milestones)) {
@@ -175,6 +218,11 @@ export default function EstimateForm() {
             subCost: li.subCost,
             isGrouped: li.isGrouped,
             sortOrder: li.sortOrder,
+            breakdowns: ((li as any).breakdowns || []).map((bd: any) => ({
+              tradeName: bd.tradeName || "",
+              subCost: bd.subCost || 0,
+              notes: bd.notes || "",
+            })),
           }))
       );
       setMilestones(
@@ -218,6 +266,7 @@ export default function EstimateForm() {
         subCost: 0,
         isGrouped: false,
         sortOrder: prev.length,
+        breakdowns: [],
       },
     ]);
   };
@@ -230,10 +279,61 @@ export default function EstimateForm() {
     setItems(prev => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
-      // Auto-set isGrouped for grouped phases
+      // Auto-set isGrouped for grouped phases and auto-populate default breakdowns
       if (field === "phaseGroup") {
-        updated[index].isGrouped = GROUPED_PHASES.includes(value);
+        const isGrouped = GROUPED_PHASES.includes(value);
+        updated[index].isGrouped = isGrouped;
+        if (isGrouped && DEFAULT_BREAKDOWNS[value]) {
+          // Only auto-populate if no breakdowns yet
+          if (updated[index].breakdowns.length === 0) {
+            updated[index].breakdowns = DEFAULT_BREAKDOWNS[value].map(bd => ({ ...bd }));
+          }
+        } else if (!isGrouped) {
+          updated[index].breakdowns = [];
+        }
       }
+      // When isGrouped changes, manage breakdowns
+      if (field === "isGrouped") {
+        if (value && DEFAULT_BREAKDOWNS[updated[index].phaseGroup] && updated[index].breakdowns.length === 0) {
+          updated[index].breakdowns = DEFAULT_BREAKDOWNS[updated[index].phaseGroup].map(bd => ({ ...bd }));
+        } else if (!value) {
+          updated[index].breakdowns = [];
+        }
+      }
+      return updated;
+    });
+  };
+
+  const updateBreakdown = (itemIndex: number, bdIndex: number, field: keyof BreakdownForm, value: any) => {
+    setItems(prev => {
+      const updated = [...prev];
+      const breakdowns = [...updated[itemIndex].breakdowns];
+      breakdowns[bdIndex] = { ...breakdowns[bdIndex], [field]: value };
+      updated[itemIndex] = { ...updated[itemIndex], breakdowns };
+      // Auto-recalculate subCost from breakdown totals
+      const total = breakdowns.reduce((sum, bd) => sum + (bd.subCost || 0), 0);
+      updated[itemIndex] = { ...updated[itemIndex], breakdowns, subCost: total };
+      return updated;
+    });
+  };
+
+  const addBreakdown = (itemIndex: number) => {
+    setItems(prev => {
+      const updated = [...prev];
+      const breakdowns = [...updated[itemIndex].breakdowns, { tradeName: "", subCost: 0, notes: "" }];
+      updated[itemIndex] = { ...updated[itemIndex], breakdowns };
+      return updated;
+    });
+  };
+
+  const removeBreakdown = (itemIndex: number, bdIndex: number) => {
+    setItems(prev => {
+      const updated = [...prev];
+      const breakdowns = updated[itemIndex].breakdowns.filter((_, i) => i !== bdIndex);
+      updated[itemIndex] = { ...updated[itemIndex], breakdowns };
+      // Recalculate subCost
+      const total = breakdowns.reduce((sum, bd) => sum + (bd.subCost || 0), 0);
+      updated[itemIndex] = { ...updated[itemIndex], breakdowns, subCost: total };
       return updated;
     });
   };
@@ -559,8 +659,10 @@ export default function EstimateForm() {
                             <Input
                               type="number"
                               value={item.subCost || ""}
-                              onChange={e => updateLineItem(idx, "subCost", parseFloat(e.target.value) || 0)}
-                              placeholder="0.00"
+                              onChange={e => !item.isGrouped && updateLineItem(idx, "subCost", parseFloat(e.target.value) || 0)}
+                              readOnly={item.isGrouped}
+                              placeholder={item.isGrouped ? "Auto-calculated from breakdown" : "0.00"}
+                              className={item.isGrouped ? "bg-muted cursor-not-allowed" : ""}
                               data-testid={`input-sub-cost-${idx}`}
                             />
                           </div>
@@ -573,12 +675,79 @@ export default function EstimateForm() {
                               data-testid={`text-client-price-${idx}`}
                             />
                           </div>
-                          {GROUPED_PHASES.includes(item.phaseGroup) && (
+                          {item.isGrouped && (
                             <div className="text-xs text-muted-foreground">
-                              <span className="bg-primary/10 text-primary px-2 py-1 rounded">Grouped</span>
+                              <span className="bg-primary/10 text-primary px-2 py-1 rounded flex items-center gap-1">
+                                <Layers className="w-3 h-3" /> Grouped
+                              </span>
                             </div>
                           )}
                         </div>
+                        {/* Trade Breakdown section for grouped items */}
+                        {item.isGrouped && (
+                          <div className="mt-2 border border-dashed border-primary/30 rounded-md p-3 bg-primary/5 space-y-2" data-testid={`breakdown-section-${idx}`}>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-semibold text-primary flex items-center gap-1">
+                                <Layers className="w-3 h-3" /> Trade Breakdown (Internal Only)
+                              </Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => addBreakdown(idx)}
+                                data-testid={`button-add-breakdown-${idx}`}
+                              >
+                                <Plus className="w-3 h-3 mr-1" /> Add Trade
+                              </Button>
+                            </div>
+                            {item.breakdowns.map((bd, bdIdx) => (
+                              <div key={bdIdx} className="flex items-center gap-2" data-testid={`breakdown-row-${idx}-${bdIdx}`}>
+                                <Input
+                                  className="flex-1 h-7 text-xs"
+                                  placeholder="Trade name"
+                                  value={bd.tradeName}
+                                  onChange={e => updateBreakdown(idx, bdIdx, "tradeName", e.target.value)}
+                                  data-testid={`input-breakdown-trade-${idx}-${bdIdx}`}
+                                />
+                                <Input
+                                  type="number"
+                                  className="w-28 h-7 text-xs"
+                                  placeholder="0.00"
+                                  value={bd.subCost || ""}
+                                  onChange={e => updateBreakdown(idx, bdIdx, "subCost", parseFloat(e.target.value) || 0)}
+                                  data-testid={`input-breakdown-cost-${idx}-${bdIdx}`}
+                                />
+                                <Input
+                                  className="flex-1 h-7 text-xs"
+                                  placeholder="Notes (optional)"
+                                  value={bd.notes}
+                                  onChange={e => updateBreakdown(idx, bdIdx, "notes", e.target.value)}
+                                  data-testid={`input-breakdown-notes-${idx}-${bdIdx}`}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-destructive shrink-0"
+                                  onClick={() => removeBreakdown(idx, bdIdx)}
+                                  data-testid={`button-remove-breakdown-${idx}-${bdIdx}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            ))}
+                            <div className="flex justify-between items-center pt-1 border-t border-primary/20 text-xs">
+                              <span className="text-muted-foreground">Breakdown Total</span>
+                              <span className={`font-mono font-semibold ${
+                                item.breakdowns.length > 0 && Math.abs(item.breakdowns.reduce((s, b) => s + b.subCost, 0) - item.subCost) > 0.01
+                                  ? "text-destructive" : "text-foreground"
+                              }`} data-testid={`text-breakdown-total-${idx}`}>
+                                {formatCurrency(item.breakdowns.reduce((s, b) => s + b.subCost, 0))}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
