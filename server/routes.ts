@@ -1064,17 +1064,24 @@ HVAC (LABOR ONLY — equipment separate):
 - Then set deposit = min(1000, totalClientPrice * 0.10)
 
 PROGRESS PAYMENTS:
-- Break payments down by actual construction phases — NOT lumped together
-- Each major phase gets its own milestone. Examples:
-  • Deposit upon acceptance
-  • Completion of Demolition
-  • Completion of Framing
-  • Completion of MEP (Mechanical, Electrical, Plumbing)
-  • Completion of Insulation, Drywall & Paint
-  • Completion of Tile & Finish Carpentry
-  • Final Walkthrough & Project Closeout (Retention)
-- For smaller projects with fewer phases, combine logically but never lump more than 2 phases into one payment
-- Payment schedule should be top-heavy: earlier milestones should be larger amounts
+- NEVER group phases together in a single payment. Each trade/phase gets its OWN separate payment milestone.
+- This makes each individual payment feel smaller and ties it to visible progress the client can see.
+- The dollar amounts are SYMBOLIC — they do not need to match the actual cost of that trade. Spread the total evenly-ish across milestones with round numbers, keeping it top-heavy.
+- Example for a bathroom remodel:
+  • Deposit upon acceptance — $1,000
+  • Completion of Demolition — $3,500
+  • Completion of Framing — $3,000
+  • Completion of Plumbing Rough-In — $3,000
+  • Completion of Electrical Rough-In — $2,500
+  • Completion of HVAC — $2,500
+  • Completion of Insulation — $2,000
+  • Completion of Drywall — $2,000
+  • Completion of Paint — $1,500
+  • Completion of Tile & Stone — $1,500
+  • Completion of Finish Carpentry — $1,500
+  • Final Walkthrough & Project Closeout (10% Retention) — $2,870
+- For smaller projects (e.g., cosmetic, glass install), use fewer milestones but still keep them individual — never "Demo + Framing" as one line
+- Payment schedule should be top-heavy: earlier milestones get slightly larger amounts
 
 ROUND NUMBERS RULE:
 - All progress payment amounts MUST be clean, round numbers for easy invoicing
