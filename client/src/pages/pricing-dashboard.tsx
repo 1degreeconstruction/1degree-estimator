@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import {
   Search, ChevronDown, ChevronRight, Lock, Unlock, Save, Database,
-  AlertTriangle, X
+  AlertTriangle, X, FileSpreadsheet, Filter
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -40,6 +40,7 @@ const CHALLENGE_PHRASE = "are you omri?";
 const EDIT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 const SOURCE_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  excel_budget_sheet: { bg: "bg-teal-500/15", text: "text-teal-400", label: "Excel Budget" },
   user_edit:       { bg: "bg-blue-500/15", text: "text-blue-400", label: "User Edit" },
   ai_generated:    { bg: "bg-purple-500/15", text: "text-purple-400", label: "AI Generated" },
   purchase_order:  { bg: "bg-green-500/15", text: "text-green-400", label: "Purchase Order" },
@@ -50,7 +51,13 @@ const SOURCE_COLORS: Record<string, { bg: string; text: string; label: string }>
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatCurrency(n: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  // Show decimals for small values (per-unit rates like $0.50/sqft)
+  const hasDecimals = n < 10 && n % 1 !== 0;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD",
+    minimumFractionDigits: hasDecimals ? 2 : 0,
+    maximumFractionDigits: hasDecimals ? 2 : 0
+  }).format(n);
 }
 
 function formatDate(s: string): string {
@@ -329,6 +336,7 @@ export default function PricingDashboard() {
   const [search, setSearch] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [challengeOpen, setChallengeOpen] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data, isLoading, isError } = useQuery<TradeGroup[]>({
@@ -362,33 +370,55 @@ export default function PricingDashboard() {
     };
   }, [editMode, resetTimer]);
 
-  // ── Search filter ─────────────────────────────────────────────────────────
+  // ── Source counts ──────────────────────────────────────────────────────────
+  const sourceCounts = useMemo(() => {
+    if (!data) return {} as Record<string, number>;
+    const counts: Record<string, number> = {};
+    for (const group of data) {
+      for (const entry of group.entries) {
+        counts[entry.source] = (counts[entry.source] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [data]);
+
+  // ── Search + source filter ────────────────────────────────────────────────
   const filtered = useMemo(() => {
     if (!data) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return data;
     return data
       .map(group => {
-        const tradeMatch =
-          group.trade.toLowerCase().includes(q) ||
-          group.cslb.code.toLowerCase().includes(q) ||
-          group.cslb.name.toLowerCase().includes(q);
+        let entries = group.entries;
 
-        const matchedEntries = group.entries.filter(e =>
-          e.scopeKeyword.toLowerCase().includes(q) ||
-          (e.city || "").toLowerCase().includes(q) ||
-          (e.source || "").toLowerCase().includes(q) ||
-          tradeMatch
-        );
+        // Source filter
+        if (sourceFilter) {
+          entries = entries.filter(e => e.source === sourceFilter);
+        }
 
-        if (!matchedEntries.length) return null;
-        return { ...group, entries: matchedEntries };
+        // Text search
+        if (q) {
+          const tradeMatch =
+            group.trade.toLowerCase().includes(q) ||
+            group.cslb.code.toLowerCase().includes(q) ||
+            group.cslb.name.toLowerCase().includes(q);
+
+          entries = entries.filter(e =>
+            e.scopeKeyword.toLowerCase().includes(q) ||
+            (e.city || "").toLowerCase().includes(q) ||
+            (e.source || "").toLowerCase().includes(q) ||
+            tradeMatch
+          );
+        }
+
+        if (!entries.length) return null;
+        return { ...group, entries, count: entries.length };
       })
       .filter(Boolean) as TradeGroup[];
-  }, [data, search]);
+  }, [data, search, sourceFilter]);
 
-  const totalEntries = data?.reduce((s, g) => s + g.count, 0) ?? 0;
+  const totalEntries = data?.reduce((s, g) => s + g.entries.length, 0) ?? 0;
   const totalTrades = data?.length ?? 0;
+  const filteredEntries = filtered.reduce((s, g) => s + g.entries.length, 0);
 
   return (
     <AdminLayout>
@@ -457,6 +487,57 @@ export default function PricingDashboard() {
             </button>
           )}
         </div>
+
+        {/* Source filter chips */}
+        {!isLoading && totalEntries > 0 && Object.keys(sourceCounts).length > 1 && (
+          <div className="flex flex-wrap items-center gap-2 mb-5">
+            <Filter className="w-3.5 h-3.5 text-zinc-500" />
+            <button
+              onClick={() => setSourceFilter(null)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                !sourceFilter
+                  ? "bg-zinc-100 text-zinc-900"
+                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
+              }`}
+            >
+              All ({totalEntries})
+            </button>
+            {Object.entries(sourceCounts)
+              .sort((a, b) => b[1] - a[1])
+              .map(([src, count]) => {
+                const cfg = SOURCE_COLORS[src] || { bg: "bg-zinc-500/15", text: "text-zinc-400", label: src };
+                const active = sourceFilter === src;
+                return (
+                  <button
+                    key={src}
+                    onClick={() => setSourceFilter(active ? null : src)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      active
+                        ? `${cfg.bg} ${cfg.text} ring-1 ring-current`
+                        : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
+                    }`}
+                  >
+                    {cfg.label} ({count})
+                  </button>
+                );
+              })}
+          </div>
+        )}
+
+        {/* Filtered count indicator */}
+        {(sourceFilter || search) && !isLoading && (
+          <div className="flex items-center gap-2 mb-4 text-xs text-zinc-500">
+            Showing {filteredEntries} of {totalEntries} entries across {filtered.length} trade{filtered.length !== 1 ? "s" : ""}
+            {(sourceFilter || search) && (
+              <button
+                onClick={() => { setSourceFilter(null); setSearch(""); }}
+                className="text-zinc-400 hover:text-zinc-200 underline"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Content */}
         {isLoading && (
