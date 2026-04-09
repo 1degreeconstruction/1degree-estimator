@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2, MessageSquare, Layers } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -791,21 +792,51 @@ export default function EstimateForm() {
                               if (marketRate && bd.subCost > 0) {
                                 if (bd.subCost < marketRate.low) {
                                   marketBadge = (
-                                    <span className="text-[10px] text-blue-500 whitespace-nowrap font-medium" title={`Market: $${marketRate.low.toLocaleString()}–$${marketRate.high.toLocaleString()} ${marketRate.unit}`}>
-                                      ↓ Below
-                                    </span>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="text-[10px] text-blue-500 whitespace-nowrap font-medium cursor-help">↓ Below</span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="max-w-[220px] text-xs">
+                                        <p className="font-semibold mb-1">Below Market Range</p>
+                                        <p>Your price: <span className="font-mono">${bd.subCost.toLocaleString()}</span></p>
+                                        <p>Market low: <span className="font-mono">${marketRate.low.toLocaleString()}</span></p>
+                                        <p>Market mid: <span className="font-mono">${marketRate.mid.toLocaleString()}</span></p>
+                                        <p>Market high: <span className="font-mono">${marketRate.high.toLocaleString()}</span></p>
+                                        <p className="text-muted-foreground mt-1">{marketRate.unit}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
                                   );
                                 } else if (bd.subCost > marketRate.mid) {
                                   marketBadge = (
-                                    <span className="text-[10px] text-amber-500 whitespace-nowrap font-medium" title={`Market: $${marketRate.low.toLocaleString()}–$${marketRate.high.toLocaleString()} ${marketRate.unit}`}>
-                                      ↑ Above
-                                    </span>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="text-[10px] text-amber-500 whitespace-nowrap font-medium cursor-help">↑ Above</span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="max-w-[220px] text-xs">
+                                        <p className="font-semibold mb-1">Above Market Range</p>
+                                        <p>Your price: <span className="font-mono">${bd.subCost.toLocaleString()}</span></p>
+                                        <p>Market low: <span className="font-mono">${marketRate.low.toLocaleString()}</span></p>
+                                        <p>Market mid: <span className="font-mono">${marketRate.mid.toLocaleString()}</span></p>
+                                        <p>Market high: <span className="font-mono">${marketRate.high.toLocaleString()}</span></p>
+                                        <p className="text-muted-foreground mt-1">{marketRate.unit}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
                                   );
                                 } else {
                                   marketBadge = (
-                                    <span className="text-[10px] text-green-600 whitespace-nowrap font-medium" title={`Market: $${marketRate.low.toLocaleString()}–$${marketRate.high.toLocaleString()} ${marketRate.unit}`}>
-                                      ✓ Market
-                                    </span>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="text-[10px] text-green-600 whitespace-nowrap font-medium cursor-help">✓ Market</span>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top" className="max-w-[220px] text-xs">
+                                        <p className="font-semibold mb-1">Within Market Range</p>
+                                        <p>Your price: <span className="font-mono">${bd.subCost.toLocaleString()}</span></p>
+                                        <p>Market low: <span className="font-mono">${marketRate.low.toLocaleString()}</span></p>
+                                        <p>Market mid: <span className="font-mono">${marketRate.mid.toLocaleString()}</span></p>
+                                        <p>Market high: <span className="font-mono">${marketRate.high.toLocaleString()}</span></p>
+                                        <p className="text-muted-foreground mt-1">{marketRate.unit}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
                                   );
                                 }
                               }
