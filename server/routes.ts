@@ -533,7 +533,7 @@ export async function registerRoutes(
       if (!clientEmail) return res.status(400).json({ error: "Estimate has no client email" });
 
       const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
-      const viewUrl = `${appUrl}/#/client/${estimate.uniqueId}`;
+      const viewUrl = `${appUrl}/#/estimate/${estimate.uniqueId}`;
 
       const { subject, html } = buildEstimateEmail({
         clientName: estimate.clientName,
@@ -605,7 +605,7 @@ export async function registerRoutes(
         : 0;
 
       const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
-      const viewUrl = `${appUrl}/#/client/${estimate.uniqueId}`;
+      const viewUrl = `${appUrl}/#/estimate/${estimate.uniqueId}`;
 
       const { subject, html } = buildFollowUpEmail({
         clientName: estimate.clientName,
@@ -773,7 +773,7 @@ export async function registerRoutes(
       if (!message) return res.status(400).json({ error: "message is required" });
 
       const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
-      const viewUrl = `${appUrl}/#/client/${estimate.uniqueId}`;
+      const viewUrl = `${appUrl}/#/estimate/${estimate.uniqueId}`;
 
       const replySubject = subject || `Re: Your Estimate from 1 Degree Construction - ${estimate.estimateNumber}`;
       const html = `
