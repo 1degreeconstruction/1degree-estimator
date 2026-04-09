@@ -11,7 +11,7 @@ import type { User } from "@shared/schema";
 import multer from "multer";
 import { createClient } from "@supabase/supabase-js";
 import Tesseract from "tesseract.js";
-import sharp from "sharp";
+// sharp removed — Render free tier can't build native bindings
 import { PDFParse } from "pdf-parse";
 
 // Supabase client for file storage
@@ -1640,20 +1640,8 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
         imageBuffer = fileBuffer;
       }
 
-      // Step 2: Pre-process image with sharp for better OCR
-      let processedBuffer: Buffer;
-      try {
-        processedBuffer = await sharp(imageBuffer)
-          .grayscale()
-          .normalize()
-          .sharpen()
-          .toBuffer();
-      } catch {
-        processedBuffer = imageBuffer;
-      }
-
-      // Step 3: Run Tesseract OCR
-      const { data: { text } } = await Tesseract.recognize(processedBuffer, "eng", {
+      // Step 2: Run Tesseract OCR directly (no sharp preprocessing)
+      const { data: { text } } = await Tesseract.recognize(imageBuffer, "eng", {
         logger: () => {}, // suppress logs
       });
 
