@@ -1665,7 +1665,14 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
 RAW OCR TEXT:
 ${rawText}
 
-Extract ALL line items with costs. IMPORTANT: When a line item has a quantity (e.g., "2 windows @ $200 each" or "6 recessed lights $130/ea"), extract the quantity and unit cost separately. Set amount = quantity * unitCost. If no quantity is indicated, set quantity to 1 and unitCost equal to amount.
+Extract ALL line items with costs.
+
+QUANTITY EXTRACTION RULES (CRITICAL):
+- Read the document carefully for quantities. Look for: numbers before item names ("3 recessed lights"), "x" or "@" notation ("6 x $130"), qty columns, count fields, and parenthetical quantities.
+- When the total amount divided by a common per-unit price gives a whole number, that's likely the quantity. Example: $390 for recessed lights at $130/ea = 3 lights, NOT 1 light at $390.
+- Check if the document lists individual items that should be counted. Example: if it lists "recessed light install" in 3 locations, quantity is 3.
+- NEVER default to quantity 1 if the math suggests otherwise. Always verify: does totalAmount / unitCost = a reasonable whole number?
+- Set amount = quantity * unitCost. Double-check this math.
 
 Return ONLY valid JSON:
 {
