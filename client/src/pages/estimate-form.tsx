@@ -1437,8 +1437,8 @@ export default function EstimateForm() {
       </div>
 
       {/* Fixed bottom banner — Estimate Summary */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80" data-testid="section-calculations">
-        <div className="max-w-7xl mx-auto px-4 md:pl-64">
+      <div className="fixed bottom-0 right-0 left-60 z-30 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 max-md:left-0" data-testid="section-calculations">
+        <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center gap-4 py-3 overflow-x-auto">
             {/* Stats row */}
             <div className="flex items-center gap-1 text-xs whitespace-nowrap">
