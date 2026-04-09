@@ -10,8 +10,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {
   Edit, ExternalLink, Copy, Send, ArrowLeft,
-  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers, Upload, Plus, X, UserPlus
+  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers, Upload, Plus, X, UserPlus, Trash2
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getStatusLabel } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -175,6 +176,22 @@ export default function EstimateDetailPage() {
     },
   });
 
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", `/api/estimates/${params.id}`);
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Estimate deleted" });
+      navigate("/");
+    },
+    onError: (e: any) => toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
+  });
+
   const [extraEmails, setExtraEmails] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState("");
   const [showEmailPanel, setShowEmailPanel] = useState(false);
@@ -314,6 +331,23 @@ export default function EstimateDetailPage() {
               >
                 <Send className="w-4 h-4" />
                 {estimate.status === "draft" ? "Email to Client" : "Resend"}
+              </Button>
+            )}
+            {user?.role === "admin" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-2 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                onClick={() => {
+                  if (window.confirm(`Delete estimate ${estimate.estimateNumber}? This cannot be undone.`)) {
+                    deleteMutation.mutate();
+                  }
+                }}
+                disabled={deleteMutation.isPending}
+                data-testid="button-delete-estimate"
+              >
+                <Trash2 className="w-4 h-4" />
+                {deleteMutation.isPending ? "Deleting..." : "Delete"}
               </Button>
             )}
           </div>

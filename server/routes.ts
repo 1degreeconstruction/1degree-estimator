@@ -402,6 +402,23 @@ export async function registerRoutes(
     }
   });
 
+  // DELETE /api/estimates/:id — delete an estimate and all related data
+  app.delete("/api/estimates/:id", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const user = (req as any).user as User;
+      if (user.role !== "admin") return res.status(403).json({ error: "Admin only" });
+
+      const estimate = await storage.getEstimate(id);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+      await storage.deleteEstimate(id);
+      res.json({ ok: true, deleted: estimate.estimateNumber });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ─── Estimate Chat/Messages ────────────────────────────────────────────────
 
   // GET messages for an estimate (PUBLIC - client can see)

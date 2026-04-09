@@ -41,6 +41,7 @@ export interface IStorage {
   // Line Items
   getLineItems(estimateId: number): Promise<LineItem[]>;
   createLineItem(item: InsertLineItem): Promise<LineItem>;
+  deleteEstimate(estimateId: number): Promise<void>;
   deleteLineItemsByEstimate(estimateId: number): Promise<void>;
 
   // Line Item Breakdowns
@@ -163,6 +164,24 @@ export class DatabaseStorage implements IStorage {
   async createLineItem(item: InsertLineItem): Promise<LineItem> {
     const rows = await db.insert(lineItems).values(item).returning();
     return rows[0];
+  }
+
+  async deleteEstimate(estimateId: number): Promise<void> {
+    // Delete all related records first
+    await db.delete(estimateMessages).where(eq(estimateMessages.estimateId, estimateId));
+    await db.delete(emailLogs).where(eq(emailLogs.estimateId, estimateId));
+    await db.delete(activityLog).where(eq(activityLog.estimateId, estimateId));
+    // Delete breakdowns via line items
+    const items = await this.getLineItems(estimateId);
+    for (const item of items) {
+      await db.delete(lineItemBreakdowns).where(eq(lineItemBreakdowns.lineItemId, item.id));
+    }
+    await this.deleteLineItemsByEstimate(estimateId);
+    await this.deleteMilestonesByEstimate(estimateId);
+    // Delete events
+    await db.delete(estimateEvents).where(eq(estimateEvents.estimateId, estimateId));
+    // Delete the estimate itself
+    await db.delete(estimates).where(eq(estimates.id, estimateId));
   }
 
   async deleteLineItemsByEstimate(estimateId: number): Promise<void> {
