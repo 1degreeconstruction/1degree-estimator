@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import {
   Edit, ExternalLink, Copy, Send, ArrowLeft,
-  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers, Upload, Plus
+  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers, Upload, Plus, X, UserPlus
 } from "lucide-react";
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getStatusLabel } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -174,15 +175,31 @@ export default function EstimateDetailPage() {
     },
   });
 
+  const [extraEmails, setExtraEmails] = useState<string[]>([]);
+  const [emailInput, setEmailInput] = useState("");
+  const [showEmailPanel, setShowEmailPanel] = useState(false);
+
+  const addEmail = () => {
+    const email = emailInput.trim().toLowerCase();
+    if (email && email.includes("@") && !extraEmails.includes(email)) {
+      setExtraEmails(prev => [...prev, email]);
+      setEmailInput("");
+    }
+  };
+
   const emailMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/estimates/${params.id}/send-email`);
+      const res = await apiRequest("POST", `/api/estimates/${params.id}/send-email`, {
+        emails: extraEmails,
+      });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", params.id] });
-      toast({ title: "Estimate emailed to client" });
+      toast({ title: `Estimate sent to ${data.sentTo?.length || 1} recipient(s)` });
+      setExtraEmails([]);
+      setShowEmailPanel(false);
     },
     onError: (e: any) => toast({ title: "Email failed", description: e.message, variant: "destructive" }),
   });
@@ -287,17 +304,76 @@ export default function EstimateDetailPage() {
               <Button
                 size="sm"
                 className="gap-2 bg-orange-600 hover:bg-orange-700"
-                onClick={() => emailMutation.mutate()}
-                disabled={emailMutation.isPending || !estimate.clientEmail}
+                onClick={() => setShowEmailPanel(p => !p)}
+                disabled={!estimate.clientEmail}
                 title={!estimate.clientEmail ? "Add a client email first" : ""}
                 data-testid="button-email-client"
               >
                 <Send className="w-4 h-4" />
-                {emailMutation.isPending ? "Sending..." : estimate.status === "draft" ? "Email to Client" : "Resend"}
+                {estimate.status === "draft" ? "Email to Client" : "Resend"}
               </Button>
             )}
           </div>
         </div>
+
+        {/* Email send panel */}
+        {showEmailPanel && (
+          <Card className="mb-6 border-orange-500/30" data-testid="card-email-panel">
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Send className="w-4 h-4 text-orange-400" />
+                <span className="text-sm font-medium">Send Estimate Email</span>
+              </div>
+              {/* Primary recipient */}
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="outline" className="text-xs">{estimate.clientEmail}</Badge>
+                <span className="text-xs text-muted-foreground">primary</span>
+              </div>
+              {/* Additional recipients */}
+              {extraEmails.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {extraEmails.map(email => (
+                    <Badge key={email} variant="secondary" className="text-xs gap-1 pr-1">
+                      {email}
+                      <button onClick={() => setExtraEmails(prev => prev.filter(e => e !== email))} className="hover:text-destructive">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {/* Add email input */}
+              <div className="flex gap-2 mb-3">
+                <Input
+                  type="email"
+                  placeholder="Add another email..."
+                  value={emailInput}
+                  onChange={e => setEmailInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addEmail()}
+                  className="h-8 text-sm"
+                  data-testid="input-extra-email"
+                />
+                <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={addEmail} disabled={!emailInput.includes("@")}>
+                  <UserPlus className="w-3 h-3" /> Add
+                </Button>
+              </div>
+              {/* Send button */}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  className="bg-orange-600 hover:bg-orange-700 gap-2"
+                  onClick={() => emailMutation.mutate()}
+                  disabled={emailMutation.isPending}
+                  data-testid="button-confirm-send"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {emailMutation.isPending ? "Sending..." : `Send to ${1 + extraEmails.length} recipient${extraEmails.length ? "s" : ""}`}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => { setShowEmailPanel(false); setExtraEmails([]); }}>Cancel</Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left - Details */}

@@ -529,8 +529,10 @@ export async function registerRoutes(
       const estimate = await storage.getEstimate(id);
       if (!estimate) return res.status(404).json({ error: "Estimate not found" });
 
-      const clientEmail = estimate.clientEmail;
-      if (!clientEmail) return res.status(400).json({ error: "Estimate has no client email" });
+      // Support multiple recipients: from body, or fall back to estimate's client email
+      const extraEmails: string[] = req.body.emails || [];
+      const allRecipients = [...new Set([estimate.clientEmail, ...extraEmails].filter(Boolean))] as string[];
+      if (allRecipients.length === 0) return res.status(400).json({ error: "No recipient emails" });
 
       const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
       const viewUrl = `${appUrl}/#/estimate/${estimate.uniqueId}`;
@@ -545,42 +547,48 @@ export async function registerRoutes(
         validUntil: estimate.validUntil || "",
       });
 
-      const { messageId } = await sendGmailEmail({
-        senderName: user.name,
-        senderEmail: user.email,
-        accessToken: user.googleAccessToken,
-        refreshToken: user.googleRefreshToken || null,
-        to: clientEmail,
-        subject,
-        html,
-      });
+      const results: string[] = [];
+      for (const recipient of allRecipients) {
+        const { messageId } = await sendGmailEmail({
+          senderName: user.name,
+          senderEmail: user.email,
+          accessToken: user.googleAccessToken,
+          refreshToken: user.googleRefreshToken || null,
+          to: recipient,
+          subject,
+          html,
+        });
+        results.push(messageId);
 
-      // Log the email
-      await storage.logEmail({
-        estimateId: id,
-        sentByUserId: user.id,
-        recipientEmail: clientEmail,
-        subject,
-        bodyPreview: `Estimate ${estimate.estimateNumber} sent to ${clientEmail}`,
-        gmailMessageId: messageId,
-        emailType: "estimate",
-        status: "sent",
-      });
+        await storage.logEmail({
+          estimateId: id,
+          sentByUserId: user.id,
+          recipientEmail: recipient,
+          fromEmail: user.email,
+          fromName: user.name,
+          subject,
+          bodyPreview: `Estimate ${estimate.estimateNumber} sent to ${recipient}`,
+          gmailMessageId: messageId,
+          direction: "outbound",
+          emailType: "estimate",
+          status: "sent",
+          isRead: true,
+        });
+      }
 
       // Mark estimate as sent if it was a draft
       if (estimate.status === "draft") {
         await storage.updateEstimate(id, { status: "sent", sentAt: new Date() });
       }
 
-      // Log activity
       await storage.logActivity({
         estimateId: id,
         userId: user.id,
         action: "email_sent",
-        details: `Estimate emailed to ${clientEmail} by ${user.name}`,
+        details: `Estimate emailed to ${allRecipients.join(", ")} by ${user.name}`,
       });
 
-      res.json({ ok: true, messageId });
+      res.json({ ok: true, sentTo: allRecipients, messageIds: results });
     } catch (err: any) {
       console.error("[send-email] error:", err);
       res.status(500).json({ error: err.message || "Failed to send email" });
