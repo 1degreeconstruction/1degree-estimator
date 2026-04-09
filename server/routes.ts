@@ -105,16 +105,39 @@ function generateUniqueId(): string {
   return result;
 }
 
-async function generateEstimateNumber(): Promise<string> {
+function getStreetInitials(address: string): string {
+  // Extract street number and street name initials
+  // "6255 Gaston Pl" -> "6255GP"
+  // "585 Roosevelt Ct" -> "585RC"
+  const parts = address.trim().split(/\s+/);
+  const streetNum = parts[0]?.replace(/\D/g, '') || '';
+  const nameInitials = parts.slice(1)
+    .filter(w => w.length > 0)
+    .map(w => w[0].toUpperCase())
+    .join('');
+  return `${streetNum}${nameInitials}`;
+}
+
+function getClientInitials(name: string): string {
+  // "Minji Kim" -> "MK", "Eddie Nolasco" -> "EN"
+  return name.trim().split(/\s+/).map(w => w[0]?.toUpperCase() || '').join('');
+}
+
+async function generateEstimateNumber(clientName: string, projectAddress: string): Promise<string> {
   const now = new Date();
-  const dateStr = format(now, "yyyyMMdd");
+  const dateStr = format(now, "MMddyyyy");
+  const streetInit = getStreetInitials(projectAddress);
+  const clientInit = getClientInitials(clientName);
+
+  // Count existing estimates for this client
   const existing = await storage.getEstimates();
-  const todayEstimates = existing.filter(e => {
-    const num = typeof e.estimateNumber === "string" ? e.estimateNumber : String(e.estimateNumber);
-    return num.includes(dateStr);
-  });
-  const seq = String(todayEstimates.length + 1).padStart(3, "0");
-  return `1DC-${dateStr}-${seq}`;
+  const clientEstimates = existing.filter(e =>
+    e.clientName?.toLowerCase() === clientName.toLowerCase()
+  );
+  const count = clientEstimates.length + 1;
+
+  // Format: 585RC-MK-04082026-1
+  return `${streetInit}-${clientInit}-${dateStr}-${count}`;
 }
 
 export async function registerRoutes(
@@ -520,7 +543,10 @@ RULES:
       const { lineItems: items, milestones, ...estimateData } = req.body;
 
       const now = new Date();
-      const estimateNumber = await generateEstimateNumber();
+      const estimateNumber = await generateEstimateNumber(
+        estimateData.clientName || "Unknown",
+        estimateData.projectAddress || "Unknown"
+      );
       const uniqueId = generateUniqueId();
 
       // Calculate totals
