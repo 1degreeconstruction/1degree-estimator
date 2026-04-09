@@ -814,7 +814,7 @@ function ChatWidget({ uniqueId, clientName, salesRep }: { uniqueId: string; clie
       const res = await apiRequest("GET", `/api/estimates/public/${uniqueId}/messages`);
       return res.json();
     },
-    refetchInterval: open ? 10000 : false,
+    refetchInterval: open ? 30000 : false,
   });
 
   useEffect(() => {

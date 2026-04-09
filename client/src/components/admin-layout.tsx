@@ -25,13 +25,13 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
   const { data: inboxStatus } = useQuery<{ unreadCount: number }>({
     queryKey: ["/api/inbox/status"],
-    refetchInterval: 30000,
+    refetchInterval: 60000,
   });
   const unreadCount = inboxStatus?.unreadCount ?? 0;
 
   const { data: chatUnread } = useQuery<{ count: number }>({
     queryKey: ["/api/messages/unread"],
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
   const chatUnreadCount = chatUnread?.count ?? 0;
 

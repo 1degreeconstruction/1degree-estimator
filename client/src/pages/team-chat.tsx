@@ -53,7 +53,7 @@ export default function TeamChat() {
   // Unread client messages
   const { data: unreadData } = useQuery<{ count: number; messages: ChatMsg[] }>({
     queryKey: ["/api/messages/unread"],
-    refetchInterval: 15000,
+    refetchInterval: 60000,
   });
 
   // Messages for selected estimate
@@ -65,7 +65,7 @@ export default function TeamChat() {
       return res.json();
     },
     enabled: !!selectedEstimateId,
-    refetchInterval: selectedEstimateId ? 8000 : false,
+    refetchInterval: selectedEstimateId ? 60000 : false,
   });
 
   const sendMutation = useMutation({
