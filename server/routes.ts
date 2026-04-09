@@ -500,6 +500,48 @@ export async function registerRoutes(
         isRead: false,
         createdAt: new Date(),
       });
+
+      // Email the client that the team responded
+      try {
+        const estimate = await storage.getEstimate(id);
+        if (estimate?.clientEmail) {
+          const teamAccessToken = await storage.getConfig("team_access_token");
+          const teamRefreshToken = await storage.getConfig("team_refresh_token");
+          const teamEmail = await storage.getConfig("team_gmail_email");
+          if (teamAccessToken && teamEmail) {
+            const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
+            const viewUrl = `${appUrl}/#/estimate/${estimate.uniqueId}`;
+            const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:600px;margin:0 auto;">
+              <div style="background:#0a0a0a;padding:24px 32px;border-radius:8px 8px 0 0;">
+                <div style="color:#e87722;font-size:20px;font-weight:700;">1 Degree Construction</div>
+              </div>
+              <div style="background:#fff;padding:32px;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;">
+                <p style="margin:0 0 8px;font-size:15px;color:#333;">Hi ${estimate.clientName},</p>
+                <p style="margin:0 0 20px;font-size:15px;color:#555;line-height:1.6;">
+                  ${user.name} from 1 Degree Construction responded to your message regarding estimate <strong>${estimate.estimateNumber}</strong>.
+                </p>
+                <div style="background:#f5f5f5;border-left:3px solid #e87722;padding:12px 16px;margin:0 0 24px;border-radius:4px;">
+                  <p style="margin:0;font-size:14px;color:#555;white-space:pre-wrap;">${message.trim()}</p>
+                </div>
+                <div style="text-align:center;">
+                  <a href="${viewUrl}" style="display:inline-block;background:#e87722;color:#fff;padding:12px 32px;border-radius:6px;font-size:15px;font-weight:600;text-decoration:none;">View Estimate & Reply</a>
+                </div>
+              </div>
+            </div>`;
+
+            await sendGmailEmail({
+              senderName: "1 Degree Construction",
+              senderEmail: teamEmail,
+              accessToken: teamAccessToken,
+              refreshToken: teamRefreshToken,
+              to: estimate.clientEmail,
+              subject: `1DC Direct Line Responded! - ${estimate.estimateNumber}`,
+              html,
+            }).catch(() => {});
+          }
+        }
+      } catch { /* non-fatal */ }
+
       res.json(msg);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
