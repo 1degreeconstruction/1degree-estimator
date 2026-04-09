@@ -86,6 +86,7 @@ export default function EstimateForm() {
   const [salesRepId, setSalesRepId] = useState<number>(0);
   const [notesInternal, setNotesInternal] = useState("");
   const [permitRequired, setPermitRequired] = useState(false);
+  const [markupRate, setMarkupRate] = useState(100);
   const [items, setItems] = useState<LineItemForm[]>([]);
   const [milestones, setMilestones] = useState<MilestoneForm[]>([]);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -351,6 +352,7 @@ export default function EstimateForm() {
       setProjectInclusions((existingEstimate as any).projectInclusions || "");
       setProjectExclusions((existingEstimate as any).projectExclusions || "");
       setPermitRequired(existingEstimate.permitRequired);
+      setMarkupRate((existingEstimate as any).markupRate ?? 100);
       setItems(
         existingEstimate.lineItems
           .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -400,13 +402,14 @@ export default function EstimateForm() {
   // Auto-calculations
   const calculations = useMemo(() => {
     const totalSubCost = items.reduce((sum, i) => sum + (i.subCost || 0), 0);
-    const subtotal = totalSubCost * 2;
+    const markupMultiplier = 1 + (markupRate || 100) / 100;
+    const subtotal = Math.round(totalSubCost * markupMultiplier * 100) / 100;
     const allowance = Math.round(subtotal * 0.03 * 100) / 100;
     const total = Math.round((subtotal + allowance) * 100) / 100;
     const deposit = Math.min(1000, Math.round(total * 0.1 * 100) / 100);
     const milestoneTotal = milestones.reduce((sum, m) => sum + (m.amount || 0), 0);
-    return { totalSubCost, subtotal, allowance, total, deposit, milestoneTotal };
-  }, [items, milestones]);
+    return { totalSubCost, subtotal, allowance, total, deposit, milestoneTotal, markupMultiplier };
+  }, [items, milestones, markupRate]);
 
   // Line item helpers
   const addLineItem = () => {
@@ -651,6 +654,7 @@ export default function EstimateForm() {
         projectAddress, city, state, zip,
         salesRepId, notesInternal, permitRequired,
         projectInclusions, projectExclusions,
+        markupRate,
         status,
         lineItems: items,
         milestones,
@@ -675,6 +679,7 @@ export default function EstimateForm() {
         projectAddress, city, state, zip,
         salesRepId, notesInternal, permitRequired,
         projectInclusions, projectExclusions,
+        markupRate,
         status,
         lineItems: items,
         milestones,
@@ -930,7 +935,7 @@ export default function EstimateForm() {
                           <div className="flex-1">
                             <Label className="text-xs">Client Price (auto)</Label>
                             <Input
-                              value={formatCurrency(item.subCost * 2)}
+                              value={formatCurrency(Math.round(item.subCost * calculations.markupMultiplier * 100) / 100)}
                               readOnly
                               className="bg-muted"
                               data-testid={`text-client-price-${idx}`}
@@ -1384,8 +1389,24 @@ export default function EstimateForm() {
                   <span className="text-muted-foreground">Internal Cost</span>
                   <span className="font-mono" data-testid="text-total-sub-cost">{formatCurrency(calculations.totalSubCost)}</span>
                 </div>
+                <div className="flex items-center justify-between text-sm gap-2">
+                  <span className="text-muted-foreground whitespace-nowrap">Markup</span>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={500}
+                      step={5}
+                      value={markupRate}
+                      onChange={e => setMarkupRate(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="h-7 w-20 text-sm font-mono text-right"
+                      data-testid="input-markup-rate"
+                    />
+                    <span className="text-xs text-muted-foreground">%</span>
+                  </div>
+                </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal (100% markup)</span>
+                  <span className="text-muted-foreground">Subtotal ({markupRate}% markup)</span>
                   <span className="font-mono" data-testid="text-subtotal">{formatCurrency(calculations.subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-sm">

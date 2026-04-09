@@ -7,3 +7,4 @@ dist/
 drizzle/migrations/
 screenshot*.png
 screenshot*.jpg
+.vercel

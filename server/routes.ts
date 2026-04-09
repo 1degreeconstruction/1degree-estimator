@@ -558,7 +558,9 @@ RULES:
           totalSubCost += item.subCost || 0;
         }
       }
-      const totalBeforeAllowance = totalSubCost * 2;
+      const markupRate = typeof estimateData.markupRate === "number" ? estimateData.markupRate : 100;
+      const markupMultiplier = 1 + markupRate / 100;
+      const totalBeforeAllowance = Math.round(totalSubCost * markupMultiplier * 100) / 100;
       const allowanceAmount = Math.round(totalBeforeAllowance * 0.03 * 100) / 100;
       const totalClientPrice = Math.round((totalBeforeAllowance + allowanceAmount) * 100) / 100;
       const depositAmount = Math.min(1000, Math.round(totalClientPrice * 0.1 * 100) / 100);
@@ -587,6 +589,7 @@ RULES:
         notesInternal: estimateData.notesInternal || null,
         projectInclusions: estimateData.projectInclusions || null,
         projectExclusions: estimateData.projectExclusions || null,
+        markupRate,
         sentAt: estimateData.status === "sent" ? now : null,
         viewedAt: null,
         approvedAt: null,
@@ -605,7 +608,7 @@ RULES:
             customPhaseLabel: item.customPhaseLabel || null,
             scopeDescription: item.scopeDescription,
             subCost: item.subCost,
-            clientPrice: item.subCost * 2,
+            clientPrice: Math.round(item.subCost * markupMultiplier * 100) / 100,
             isGrouped: item.isGrouped || false,
           });
           // Create breakdowns for grouped items
@@ -707,7 +710,9 @@ RULES:
           totalSubCost += item.subCost || 0;
         }
       }
-      const totalBeforeAllowance = totalSubCost * 2;
+      const markupRate = typeof estimateData.markupRate === "number" ? estimateData.markupRate : 100;
+      const markupMultiplier = 1 + markupRate / 100;
+      const totalBeforeAllowance = Math.round(totalSubCost * markupMultiplier * 100) / 100;
       const allowanceAmount = Math.round(totalBeforeAllowance * 0.03 * 100) / 100;
       const totalClientPrice = Math.round((totalBeforeAllowance + allowanceAmount) * 100) / 100;
       const depositAmount = Math.min(1000, Math.round(totalClientPrice * 0.1 * 100) / 100);
@@ -735,6 +740,7 @@ RULES:
         notesInternal: estimateData.notesInternal || null,
         projectInclusions: estimateData.projectInclusions !== undefined ? estimateData.projectInclusions : null,
         projectExclusions: estimateData.projectExclusions !== undefined ? estimateData.projectExclusions : null,
+        markupRate,
         sentAt: isSending ? now : undefined,
       });
 
@@ -751,7 +757,7 @@ RULES:
             customPhaseLabel: item.customPhaseLabel || null,
             scopeDescription: item.scopeDescription,
             subCost: item.subCost,
-            clientPrice: item.subCost * 2,
+            clientPrice: Math.round(item.subCost * markupMultiplier * 100) / 100,
             isGrouped: item.isGrouped || false,
           });
           // Create breakdowns for grouped items
@@ -995,7 +1001,7 @@ RULES:
   // AI estimate generation
   const AI_SYSTEM_PROMPT = `You are the estimating AI for 1 Degree Construction, a general contractor based in Los Angeles, CA. You generate construction estimates using REAL pricing data from our sub bid history, internal cost records, and LA market research.
 
-CRITICAL: All costs you output are SUB COSTS (what we pay the subcontractor). The system auto-applies 100% markup to calculate client pricing. Do NOT double the rates yourself.
+CRITICAL: All costs you output are SUB COSTS (what we pay the subcontractor). The system auto-applies the estimate's markup rate (default 100%) to calculate client pricing. Do NOT apply markup yourself.
 
 === MASTER SCOPING RULE (NON-NEGOTIABLE) ===
 NEVER scope or charge a client for work that has not been specifically identified and confirmed. Every line item and its cost MUST be tied to known, verified work.
@@ -1258,7 +1264,7 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
 
   const AI_REWRITE_SYSTEM_PROMPT = `You are the estimating AI for 1 Degree Construction. You are editing an EXISTING estimate.
 
-CRITICAL: All costs are SUB COSTS (what we pay the subcontractor). The system auto-applies 100% markup.
+CRITICAL: All costs are SUB COSTS (what we pay the subcontractor). The system auto-applies the estimate's markup rate (default 100%).
 
 === REWRITE RULES (editing an existing estimate) ===
 1. ONLY change what the user explicitly asks to change

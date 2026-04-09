@@ -424,8 +424,12 @@ export default function EstimateDetailPage() {
                   <span className="font-mono">{formatCurrency(estimate.totalSubCost)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Markup</span>
+                  <span className="font-mono">{(estimate as any).markupRate ?? 100}%</span>
+                </div>
+                <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Client Subtotal</span>
-                  <span className="font-mono">{formatCurrency(estimate.totalSubCost * 2)}</span>
+                  <span className="font-mono">{formatCurrency(Math.round(estimate.totalSubCost * (1 + ((estimate as any).markupRate ?? 100) / 100) * 100) / 100)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">3% Allowance</span>
