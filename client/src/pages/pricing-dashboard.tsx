@@ -61,6 +61,20 @@ function formatDate(s: string): string {
   }
 }
 
+function getStaleness(dateStr: string): { label: string; color: string; stale: boolean } {
+  try {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const months = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+    if (months >= 12) return { label: `${months}mo — refresh urgently`, color: "text-red-400", stale: true };
+    if (months >= 6) return { label: `${months}mo — needs refresh`, color: "text-amber-400", stale: true };
+    if (months >= 3) return { label: `${months}mo`, color: "text-zinc-500", stale: false };
+    return { label: "Current", color: "text-green-500", stale: false };
+  } catch {
+    return { label: "Unknown", color: "text-zinc-500", stale: false };
+  }
+}
+
 function avgCost(entries: PricingEntry[]): number {
   if (!entries.length) return 0;
   return entries.reduce((s, e) => s + e.subCost, 0) / entries.length;
@@ -149,7 +163,12 @@ function PricingRow({ entry, editMode, onSaved }: RowProps) {
       </td>
       <td className="px-4 py-2.5 text-sm text-zinc-400">{entry.city || "—"}</td>
       <td className="px-4 py-2.5"><SourceBadge source={entry.source} /></td>
-      <td className="px-4 py-2.5 text-xs text-zinc-500">{formatDate(entry.createdAt)}</td>
+      <td className="px-4 py-2.5 text-xs">
+        <div>{formatDate(entry.createdAt)}</div>
+        <div className={`text-[10px] font-medium ${getStaleness(entry.createdAt).color}`}>
+          {getStaleness(entry.createdAt).stale && "⚠ "}{getStaleness(entry.createdAt).label}
+        </div>
+      </td>
       <td className="px-4 py-2.5 text-sm text-zinc-400">
         {entry.estimateId ? (
           <Link href={`/estimates/${entry.estimateId}`}>
@@ -199,9 +218,10 @@ function TradeSection({ group, editMode, searchQuery, defaultOpen }: TradeSectio
   }, []);
 
   const avg = avgCost(entries);
+  const staleCount = entries.filter(e => getStaleness(e.createdAt).stale).length;
 
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden mb-3">
+    <div className={`border rounded-lg overflow-hidden mb-3 ${staleCount > 0 ? 'border-amber-500/30' : 'border-zinc-800'}`}>
       <button
         className="w-full flex items-center gap-3 px-4 py-3 bg-zinc-900 hover:bg-zinc-800/80 transition-colors text-left"
         onClick={() => setOpen(o => !o)}
@@ -210,6 +230,7 @@ function TradeSection({ group, editMode, searchQuery, defaultOpen }: TradeSectio
         <span className="font-semibold text-zinc-100 flex-1">{group.cslb.name}</span>
         <span className="text-xs text-zinc-500">{group.count} entries</span>
         <span className="text-xs text-green-400 font-mono ml-4">avg {formatCurrency(avg)}</span>
+        {staleCount > 0 && <span className="text-[10px] text-amber-400 font-medium ml-2">⚠ {staleCount} stale</span>}
         {open ? <ChevronDown className="w-4 h-4 text-zinc-500 ml-2" /> : <ChevronRight className="w-4 h-4 text-zinc-500 ml-2" />}
       </button>
 
