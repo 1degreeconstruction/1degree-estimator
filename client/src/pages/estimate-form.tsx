@@ -10,7 +10,9 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2, MessageSquare, Layers } from "lucide-react";
+import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2, MessageSquare, Layers, Link, Upload, Search, FileText, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrency } from "@/lib/utils";
@@ -94,6 +96,13 @@ export default function EstimateForm() {
   const [pricingLoading, setPricingLoading] = useState(false);
   const pricingEndRef = useRef<HTMLDivElement>(null);
 
+  // Purchase Orders Reference state
+  const [poRefOpen, setPoRefOpen] = useState(false);
+  const [poSearchQuery, setPoSearchQuery] = useState("");
+  const [poUploadFile, setPoUploadFile] = useState<File | null>(null);
+  const [poUploading, setPoUploading] = useState(false);
+  const [poLinking, setPoLinking] = useState<number | null>(null);
+
   // AI Breakdown state: track which line item index is loading
   const [aiBreakdownLoading, setAiBreakdownLoading] = useState<number | null>(null);
 
@@ -159,6 +168,7 @@ export default function EstimateForm() {
       const res = await apiRequest("POST", "/api/pricing-chat", {
         message: userMsg.content,
         conversationHistory: newMessages.slice(-10),
+        estimateId: params.id ? parseInt(params.id) : undefined,
       });
       const data = await res.json();
       setPricingMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
@@ -173,6 +183,85 @@ export default function EstimateForm() {
   const [projectExclusions, setProjectExclusions] = useState("");
 
   const { data: salesReps } = useQuery<SalesRep[]>({ queryKey: ["/api/sales-reps"] });
+
+  // PO Reference queries
+  interface PurchaseOrderData {
+    id: number;
+    estimateId?: number | null;
+    filename: string;
+    fileUrl: string;
+    status: string;
+    parsedData?: {
+      subName?: string;
+      total?: number;
+      items?: Array<{ trade?: string; description?: string; amount?: number }>;
+    } | null;
+    createdAt?: string;
+    projectAddress?: string;
+  }
+
+  const { data: thisEstimatePOs, refetch: refetchThisPOs } = useQuery<PurchaseOrderData[]>({
+    queryKey: ["/api/purchase-orders", params.id],
+    queryFn: async () => {
+      if (!params.id) return [];
+      const res = await apiRequest("GET", `/api/purchase-orders?estimateId=${params.id}`);
+      return res.json();
+    },
+    enabled: isEditing && poRefOpen,
+  });
+
+  const { data: searchedPOs, refetch: refetchSearch } = useQuery<PurchaseOrderData[]>({
+    queryKey: ["/api/purchase-orders/search", poSearchQuery],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/purchase-orders/search?q=${encodeURIComponent(poSearchQuery)}`);
+      return res.json();
+    },
+    enabled: poRefOpen,
+  });
+
+  const handlePOUpload = useCallback(async () => {
+    if (!poUploadFile || !params.id || poUploading) return;
+    setPoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", poUploadFile);
+      formData.append("estimateId", params.id);
+      const res = await fetch("/api/purchase-orders/upload", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast({ title: "PO uploaded", description: "Processing OCR and parsing..." });
+      setPoUploadFile(null);
+      refetchThisPOs();
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    } finally {
+      setPoUploading(false);
+    }
+  }, [poUploadFile, params.id, poUploading, toast, refetchThisPOs]);
+
+  const handleLinkPO = useCallback(async (poId: number) => {
+    if (!params.id || poLinking === poId) return;
+    setPoLinking(poId);
+    try {
+      const res = await apiRequest("POST", `/api/purchase-orders/${poId}/link`, {
+        estimateId: parseInt(params.id),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Link failed");
+      }
+      toast({ title: "PO linked", description: "Purchase order is now linked to this estimate." });
+      refetchThisPOs();
+      refetchSearch();
+    } catch (err: any) {
+      toast({ title: "Link failed", description: err.message, variant: "destructive" });
+    } finally {
+      setPoLinking(null);
+    }
+  }, [params.id, poLinking, toast, refetchThisPOs, refetchSearch]);
 
   // AI generation mutation
   const aiMutation = useMutation({
@@ -1101,6 +1190,162 @@ export default function EstimateForm() {
                   </div>
                 )}
               </CardContent>
+            </Card>
+
+            {/* Purchase Orders & Vendor Pricing */}
+            <Card data-testid="section-purchase-orders">
+              <Collapsible open={poRefOpen} onOpenChange={setPoRefOpen}>
+                <CollapsibleTrigger asChild>
+                  <CardHeader className="pb-3 cursor-pointer flex flex-row items-center justify-between">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <FileText className="w-4 h-4" /> Purchase Orders &amp; Vendor Pricing
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      {thisEstimatePOs && thisEstimatePOs.length > 0 && (
+                        <Badge variant="secondary" className="text-xs">{thisEstimatePOs.length}</Badge>
+                      )}
+                      {poRefOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                    </div>
+                  </CardHeader>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    <Tabs defaultValue="this-estimate">
+                      <TabsList className="w-full mb-3">
+                        <TabsTrigger value="this-estimate" className="flex-1 text-xs">This Estimate</TabsTrigger>
+                        <TabsTrigger value="other-projects" className="flex-1 text-xs">From Other Projects</TabsTrigger>
+                      </TabsList>
+
+                      {/* Tab 1: This Estimate */}
+                      <TabsContent value="this-estimate" className="space-y-3 mt-0">
+                        {!isEditing ? (
+                          <p className="text-xs text-muted-foreground text-center py-4">Save this estimate first to upload POs.</p>
+                        ) : (
+                          <>
+                            {/* Upload new PO */}
+                            <div className="flex items-center gap-2">
+                              <label className="flex-1 cursor-pointer">
+                                <Input
+                                  type="file"
+                                  accept=".pdf,.jpg,.jpeg,.png"
+                                  className="text-xs h-8"
+                                  onChange={e => setPoUploadFile(e.target.files?.[0] || null)}
+                                />
+                              </label>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1 h-8 text-xs whitespace-nowrap"
+                                onClick={handlePOUpload}
+                                disabled={!poUploadFile || poUploading}
+                              >
+                                {poUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                                Upload PO
+                              </Button>
+                            </div>
+
+                            {/* POs for this estimate */}
+                            {!thisEstimatePOs ? (
+                              <div className="space-y-2">
+                                <Skeleton className="h-12 w-full" />
+                                <Skeleton className="h-12 w-full" />
+                              </div>
+                            ) : thisEstimatePOs.length === 0 ? (
+                              <p className="text-xs text-muted-foreground text-center py-3">No POs linked yet. Upload one above or link from other projects.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {thisEstimatePOs.map(po => {
+                                  const parsed = po.parsedData;
+                                  const subName = parsed?.subName || po.filename;
+                                  const total = parsed?.total ? formatCurrency(parsed.total) : "—";
+                                  const date = po.createdAt ? new Date(po.createdAt).toLocaleDateString() : "";
+                                  const StatusIcon = po.status === "confirmed" ? CheckCircle2 : po.status === "error" ? AlertCircle : Clock;
+                                  const statusColor = po.status === "confirmed" ? "text-green-600" : po.status === "error" ? "text-destructive" : "text-amber-500";
+                                  return (
+                                    <div key={po.id} className="flex items-center gap-2 rounded-md border px-3 py-2 text-xs">
+                                      <StatusIcon className={`w-3.5 h-3.5 flex-shrink-0 ${statusColor}`} />
+                                      <div className="flex-1 min-w-0">
+                                        <p className="font-medium truncate">{subName}</p>
+                                        <p className="text-muted-foreground">{total} &middot; {po.status} &middot; {date}</p>
+                                        {po.projectAddress && po.estimateId !== (params.id ? parseInt(params.id) : undefined) && (
+                                          <p className="text-blue-500 text-[10px]">Linked from: {po.projectAddress}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </TabsContent>
+
+                      {/* Tab 2: From Other Projects */}
+                      <TabsContent value="other-projects" className="space-y-3 mt-0">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-muted-foreground" />
+                          <Input
+                            placeholder="Search by trade, sub name, or address..."
+                            value={poSearchQuery}
+                            onChange={e => setPoSearchQuery(e.target.value)}
+                            className="pl-8 text-xs h-8"
+                          />
+                        </div>
+
+                        {!isEditing && (
+                          <p className="text-xs text-muted-foreground text-center py-2">Save this estimate first to link POs.</p>
+                        )}
+
+                        {!searchedPOs ? (
+                          <div className="space-y-2">
+                            <Skeleton className="h-14 w-full" />
+                            <Skeleton className="h-14 w-full" />
+                          </div>
+                        ) : searchedPOs.length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-4">
+                            No confirmed POs found{poSearchQuery ? ` for "${poSearchQuery}"` : ". Confirm POs in the Purchase Orders section first."}.
+                          </p>
+                        ) : (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {searchedPOs.map(po => {
+                              const parsed = po.parsedData;
+                              const subName = parsed?.subName || po.filename;
+                              const total = parsed?.total ? formatCurrency(parsed.total) : "—";
+                              const trades = [...new Set((parsed?.items || []).map((i) => i.trade).filter(Boolean))].slice(0, 3).join(", ");
+                              const date = po.createdAt ? new Date(po.createdAt).toLocaleDateString() : "";
+                              const alreadyLinked = thisEstimatePOs?.some(p => p.id === po.id);
+                              return (
+                                <div key={po.id} className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium truncate">{subName}</p>
+                                    {po.projectAddress && <p className="text-muted-foreground truncate">{po.projectAddress}</p>}
+                                    <p className="text-muted-foreground">{total}{trades ? ` · ${trades}` : ""} &middot; {date}</p>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    variant={alreadyLinked ? "secondary" : "outline"}
+                                    className="h-7 text-xs gap-1 flex-shrink-0"
+                                    onClick={() => !alreadyLinked && isEditing && handleLinkPO(po.id)}
+                                    disabled={alreadyLinked || !isEditing || poLinking === po.id}
+                                  >
+                                    {poLinking === po.id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : alreadyLinked ? (
+                                      <><CheckCircle2 className="w-3 h-3" /> Linked</>
+                                    ) : (
+                                      <><Link className="w-3 h-3" /> Link</>
+                                    )}
+                                  </Button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </TabsContent>
+                    </Tabs>
+                  </CardContent>
+                </CollapsibleContent>
+              </Collapsible>
             </Card>
 
             {/* Internal Notes & Permit */}

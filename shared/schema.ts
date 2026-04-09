@@ -227,6 +227,18 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
 export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
 export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
 
+// Estimate <-> Purchase Order junction table (for cross-project linking)
+export const estimatePurchaseOrderLinks = pgTable("estimate_purchase_order_links", {
+  id: serial("id").primaryKey(),
+  estimateId: integer("estimate_id").notNull(),
+  purchaseOrderId: integer("purchase_order_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEstimatePurchaseOrderLinkSchema = createInsertSchema(estimatePurchaseOrderLinks).omit({ id: true });
+export type InsertEstimatePurchaseOrderLink = z.infer<typeof insertEstimatePurchaseOrderLinkSchema>;
+export type EstimatePurchaseOrderLink = typeof estimatePurchaseOrderLinks.$inferSelect;
+
 // Phase group constants
 export const PHASE_GROUPS = [
   { value: "permit_design", label: "Permit & Design" },

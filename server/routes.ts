@@ -365,7 +365,7 @@ export async function registerRoutes(
   // Pricing Assistant Chat
   app.post("/api/pricing-chat", requireAuth as any, async (req: Request, res: Response) => {
     try {
-      const { message, conversationHistory = [] } = req.body;
+      const { message, conversationHistory = [], estimateId } = req.body;
       if (!message || typeof message !== "string") {
         return res.status(400).json({ error: "message is required" });
       }
@@ -389,6 +389,37 @@ export async function registerRoutes(
           }).join("\n")
         : "No projects available yet.";
 
+      // If estimateId provided, gather linked PO data for this estimate
+      let linkedPOContext = "";
+      if (estimateId) {
+        const parsedEstimateId = parseInt(estimateId);
+        if (!isNaN(parsedEstimateId)) {
+          const [directPOs, linkedPOs] = await Promise.all([
+            storage.getPurchaseOrders(parsedEstimateId),
+            storage.getLinkedPurchaseOrders(parsedEstimateId),
+          ]);
+          const seenIds = new Set<number>();
+          const allPOs = [];
+          for (const po of [...directPOs, ...linkedPOs]) {
+            if (!seenIds.has(po.id)) { seenIds.add(po.id); allPOs.push(po); }
+          }
+          if (allPOs.length > 0) {
+            const poLines = allPOs.map(po => {
+              const parsed = po.parsedData as { subName?: string; total?: number; items?: Array<{ trade?: string; description?: string; amount?: number }> } | null;
+              const subName = parsed?.subName || po.filename;
+              const total = parsed?.total ? `$${parsed.total.toFixed(0)}` : "unknown total";
+              const trades = (parsed?.items || []).map((i: { trade?: string; description?: string; amount?: number }) =>
+                `${i.trade || "general"}: ${i.description || ""} $${i.amount?.toFixed(0) || 0}`
+              ).join("; ");
+              const date = po.createdAt ? new Date(po.createdAt).toISOString().slice(0, 10) : "unknown";
+              return `PO from ${subName} | ${total} | ${po.status} | ${date} | Items: ${trades || "(no items)"}` +
+                (po.estimateId !== parsedEstimateId ? " [linked from another project]" : "");
+            }).join("\n");
+            linkedPOContext = `\n\nPURCHASE ORDERS LINKED TO THIS ESTIMATE:\n${poLines}`;
+          }
+        }
+      }
+
       const systemPrompt = `You are the pricing assistant for 1 Degree Construction. You have access to the company's historical pricing database and project records.
 
 Your job:
@@ -396,24 +427,26 @@ Your job:
 - Compare costs across trades, projects, and time periods
 - Help the estimator understand cost trends
 - Suggest pricing for new work based on historical data
+- Reference specific purchase orders and vendor quotes when available
 
 PRICING DATA (from completed projects):
 ${pricingContext}
 
 PROJECT LIST:
-${projectContext}
+${projectContext}${linkedPOContext}
 
 RULES:
 1. Always cite which project/date your numbers come from
 2. If you don't have data for something, say so — don't guess
 3. Keep responses concise and direct
-4. If the user asks to UPDATE or CHANGE a price in the database, respond with your recommendation but include a JSON block at the END of your message in this exact format:
+4. When purchase orders are available, prefer citing them directly: "Based on the PO from [sub name], [trade] cost $X"
+5. If the user asks to UPDATE or CHANGE a price in the database, respond with your recommendation but include a JSON block at the END of your message in this exact format:
    ===PROPOSED_CHANGE===
    {"trade": "...", "scopeKeyword": "...", "subCost": ..., "city": "...", "reason": "..."}
    ===END_CHANGE===
-5. NEVER propose changes unless the user explicitly asks to update/change/set a price
-6. Only ONE change at a time — never batch updates
-7. Changes must be reasonable — never more than 50% different from the most recent price for that trade unless the user provides clear justification`;
+6. NEVER propose changes unless the user explicitly asks to update/change/set a price
+7. Only ONE change at a time — never batch updates
+8. Changes must be reasonable — never more than 50% different from the most recent price for that trade unless the user provides clear justification`;
 
       // Keep last 10 messages of conversation history
       const trimmedHistory = conversationHistory.slice(-10);
@@ -1725,11 +1758,39 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
     }
   });
 
+  // GET /api/purchase-orders/search?q=xxx  (must be before /:id)
+  app.get("/api/purchase-orders/search", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const q = (req.query.q as string) || "";
+      const pos = await storage.searchConfirmedPurchaseOrders(q);
+      res.json(pos);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // GET /api/purchase-orders
   app.get("/api/purchase-orders", requireAuth as any, async (req: Request, res: Response) => {
     try {
       const estimateId = req.query.estimateId ? parseInt(req.query.estimateId as string) : undefined;
-      const pos = await storage.getPurchaseOrders(estimateId);
+      if (estimateId !== undefined) {
+        // Get POs by primary estimateId + POs linked via junction table
+        const [direct, linked] = await Promise.all([
+          storage.getPurchaseOrders(estimateId),
+          storage.getLinkedPurchaseOrders(estimateId),
+        ]);
+        // Merge, deduplicate by id
+        const seen = new Set<number>();
+        const merged = [];
+        for (const po of [...direct, ...linked]) {
+          if (!seen.has(po.id)) {
+            seen.add(po.id);
+            merged.push(po);
+          }
+        }
+        return res.json(merged);
+      }
+      const pos = await storage.getPurchaseOrders();
       res.json(pos);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1772,6 +1833,24 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
       const updated = await storage.updatePurchaseOrder(po.id, updates);
       res.json(updated);
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/purchase-orders/:id/link — link a PO to another estimate
+  app.post("/api/purchase-orders/:id/link", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const poId = parseInt(req.params.id as string);
+      const { estimateId } = req.body;
+      if (!estimateId || isNaN(parseInt(estimateId))) {
+        return res.status(400).json({ error: "estimateId is required" });
+      }
+      const po = await storage.getPurchaseOrder(poId);
+      if (!po) return res.status(404).json({ error: "PO not found" });
+      const link = await storage.linkPurchaseOrderToEstimate(poId, parseInt(estimateId));
+      res.json({ success: true, link });
+    } catch (err: any) {
+      console.error("PO link error:", err);
       res.status(500).json({ error: err.message });
     }
   });

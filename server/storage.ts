@@ -8,11 +8,12 @@ import {
   type User, type InsertUser, users,
   type PricingHistory, pricingHistory,
   type PurchaseOrder, type InsertPurchaseOrder, purchaseOrders,
+  type EstimatePurchaseOrderLink, estimatePurchaseOrderLinks,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "@shared/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, or, ilike, inArray } from "drizzle-orm";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -75,6 +76,12 @@ export interface IStorage {
   getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined>;
   getPurchaseOrders(estimateId?: number): Promise<PurchaseOrder[]>;
   updatePurchaseOrder(id: number, updates: Partial<PurchaseOrder>): Promise<PurchaseOrder | undefined>;
+
+  // PO Links (junction table)
+  linkPurchaseOrderToEstimate(purchaseOrderId: number, estimateId: number): Promise<EstimatePurchaseOrderLink>;
+  getLinkedPurchaseOrders(estimateId: number): Promise<PurchaseOrder[]>;
+  isPurchaseOrderLinked(purchaseOrderId: number, estimateId: number): Promise<boolean>;
+  searchConfirmedPurchaseOrders(query: string): Promise<Array<PurchaseOrder & { projectAddress?: string }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -275,6 +282,81 @@ export class DatabaseStorage implements IStorage {
     return rows[0];
   }
 
+  // PO Links
+  async linkPurchaseOrderToEstimate(purchaseOrderId: number, estimateId: number): Promise<EstimatePurchaseOrderLink> {
+    // Upsert — ignore conflict
+    const rows = await db.insert(estimatePurchaseOrderLinks)
+      .values({ purchaseOrderId, estimateId })
+      .onConflictDoNothing()
+      .returning();
+    if (rows[0]) return rows[0];
+    // If already exists, return existing
+    const existing = await db.select().from(estimatePurchaseOrderLinks)
+      .where(and(
+        eq(estimatePurchaseOrderLinks.purchaseOrderId, purchaseOrderId),
+        eq(estimatePurchaseOrderLinks.estimateId, estimateId),
+      ));
+    return existing[0];
+  }
+
+  async getLinkedPurchaseOrders(estimateId: number): Promise<PurchaseOrder[]> {
+    // Get PO ids from junction table
+    const links = await db.select().from(estimatePurchaseOrderLinks)
+      .where(eq(estimatePurchaseOrderLinks.estimateId, estimateId));
+    if (links.length === 0) return [];
+    const poIds = links.map(l => l.purchaseOrderId);
+    return db.select().from(purchaseOrders)
+      .where(inArray(purchaseOrders.id, poIds))
+      .orderBy(desc(purchaseOrders.createdAt));
+  }
+
+  async isPurchaseOrderLinked(purchaseOrderId: number, estimateId: number): Promise<boolean> {
+    const rows = await db.select().from(estimatePurchaseOrderLinks)
+      .where(and(
+        eq(estimatePurchaseOrderLinks.purchaseOrderId, purchaseOrderId),
+        eq(estimatePurchaseOrderLinks.estimateId, estimateId),
+      ));
+    return rows.length > 0;
+  }
+
+  async searchConfirmedPurchaseOrders(query: string): Promise<Array<PurchaseOrder & { projectAddress?: string }>> {
+    // Get all confirmed POs
+    const allConfirmed = await db.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.status, "confirmed"))
+      .orderBy(desc(purchaseOrders.createdAt));
+
+    if (!query || query.trim() === "") {
+      // Return all confirmed POs with project address enrichment
+      return this._enrichPOsWithProjectAddress(allConfirmed);
+    }
+
+    const q = query.toLowerCase();
+    const filtered = allConfirmed.filter(po => {
+      const parsed = po.parsedData as { subName?: string; items?: Array<{ trade?: string }> } | null;
+      const subName = (parsed?.subName || "").toLowerCase();
+      const trades = (parsed?.items || []).map((i: { trade?: string }) => (i.trade || "").toLowerCase()).join(" ");
+      const filename = (po.filename || "").toLowerCase();
+      return subName.includes(q) || trades.includes(q) || filename.includes(q);
+    });
+
+    return this._enrichPOsWithProjectAddress(filtered);
+  }
+
+  private async _enrichPOsWithProjectAddress(pos: PurchaseOrder[]): Promise<Array<PurchaseOrder & { projectAddress?: string }>> {
+    const estimateIds = [...new Set(pos.filter(p => p.estimateId).map(p => p.estimateId!))];
+    const addressMap: Record<number, string> = {};
+    if (estimateIds.length > 0) {
+      const estRows = await db.select().from(estimates).where(inArray(estimates.id, estimateIds));
+      for (const e of estRows) {
+        addressMap[e.id] = e.projectAddress + (e.city ? ", " + e.city : "");
+      }
+    }
+    return pos.map(po => ({
+      ...po,
+      projectAddress: po.estimateId ? addressMap[po.estimateId] : undefined,
+    }));
+  }
+
   // AI Log
   async updateEstimateAiLog(estimateId: number, logEntry: string): Promise<void> {
     const existing = await this.getEstimate(estimateId);
@@ -343,6 +425,22 @@ async function initializeDb() {
     `);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_po_estimate ON purchase_orders(estimate_id);
+    `);
+    // Junction table for cross-project PO linking
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS estimate_purchase_order_links (
+        id SERIAL PRIMARY KEY,
+        estimate_id INTEGER NOT NULL REFERENCES estimates(id) ON DELETE CASCADE,
+        purchase_order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(estimate_id, purchase_order_id)
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_epo_estimate ON estimate_purchase_order_links(estimate_id);
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_epo_po ON estimate_purchase_order_links(purchase_order_id);
     `);
     console.log("DB initialization complete.");
   } catch (err) {
