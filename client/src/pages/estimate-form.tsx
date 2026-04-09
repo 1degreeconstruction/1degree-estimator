@@ -432,18 +432,126 @@ export default function EstimateForm() {
     });
   };
 
+  // Track which milestones the user has manually edited
+  const [userEditedMilestones, setUserEditedMilestones] = useState<Set<number>>(new Set());
+
+  const markMilestoneEdited = (index: number) => {
+    setUserEditedMilestones(prev => new Set(prev).add(index));
+  };
+
   const generateDefaultMilestones = () => {
     const total = calculations.total;
     if (total <= 0) return;
-    const deposit = calculations.deposit;
-    const remaining = total - deposit;
-    setMilestones([
+    const deposit = Math.min(1000, Math.round(total * 0.10));
+    const retentionTarget = Math.round(total * 0.10 * 100) / 100;
+
+    // Build phase list from current line items
+    const phaseNames: string[] = [];
+    items.forEach(item => {
+      if (item.phaseGroup === "mep") {
+        // Break MEP into individual trades from breakdowns
+        if (item.breakdowns && item.breakdowns.length > 0) {
+          item.breakdowns.forEach(bd => {
+            if (bd.tradeName) phaseNames.push(`Completion of ${bd.tradeName}`);
+          });
+        } else {
+          phaseNames.push("Completion of Plumbing Rough-In", "Completion of Electrical Rough-In", "Completion of HVAC");
+        }
+      } else if (item.phaseGroup === "insulation_drywall_paint") {
+        if (item.breakdowns && item.breakdowns.length > 0) {
+          item.breakdowns.forEach(bd => {
+            if (bd.tradeName) phaseNames.push(`Completion of ${bd.tradeName}`);
+          });
+        } else {
+          phaseNames.push("Completion of Insulation", "Completion of Drywall", "Completion of Paint");
+        }
+      } else if (item.phaseGroup === "tile_finish_carpentry") {
+        if (item.breakdowns && item.breakdowns.length > 0) {
+          item.breakdowns.forEach(bd => {
+            if (bd.tradeName) phaseNames.push(`Completion of ${bd.tradeName}`);
+          });
+        } else {
+          phaseNames.push("Completion of Tile & Stone", "Completion of Finish Carpentry");
+        }
+      } else if (item.phaseGroup === "general_conditions") {
+        // Skip — covered by deposit
+      } else if (item.phaseGroup === "permit_design" || item.phaseGroup === "planning") {
+        // Skip — covered by deposit
+      } else {
+        const label = item.customPhaseLabel || PHASE_GROUPS.find(p => p.value === item.phaseGroup)?.label || item.phaseGroup;
+        phaseNames.push(`Completion of ${label}`);
+      }
+    });
+
+    if (phaseNames.length === 0) {
+      phaseNames.push("Completion of Work");
+    }
+
+    // If milestones already exist, preserve user-edited ones
+    if (milestones.length > 0 && userEditedMilestones.size > 0) {
+      // Keep user-edited milestones, regenerate the rest
+      const userEditedTotal = milestones
+        .filter((_, i) => userEditedMilestones.has(i))
+        .reduce((sum, m) => sum + m.amount, 0);
+      const remainingBudget = total - deposit - retentionTarget - userEditedTotal;
+      const unedited = milestones.filter((_, i) => !userEditedMilestones.has(i) && i !== 0 && i !== milestones.length - 1);
+      
+      // Build new milestones: deposit + user-edited (highlighted) + new phases + retention
+      const newMilestones: MilestoneForm[] = [
+        { milestoneName: "Deposit upon acceptance", amount: deposit, sortOrder: 0 },
+      ];
+      let sortIdx = 1;
+
+      // Determine which phases need new milestones (exclude ones already covered by user-edited)
+      const editedNames = milestones.filter((_, i) => userEditedMilestones.has(i)).map(m => m.milestoneName);
+      const newPhases = phaseNames.filter(p => !editedNames.includes(p));
+
+      // Re-add user-edited milestones
+      milestones.forEach((m, i) => {
+        if (userEditedMilestones.has(i) && i !== 0) {
+          newMilestones.push({ ...m, sortOrder: sortIdx++ });
+        }
+      });
+
+      // Distribute remaining budget across new phases
+      const perPhase = newPhases.length > 0 ? remainingBudget / newPhases.length : 0;
+      newPhases.forEach(name => {
+        const rounded = perPhase > 5000 ? Math.round(perPhase / 500) * 500 : Math.round(perPhase / 100) * 100;
+        newMilestones.push({ milestoneName: name, amount: Math.max(rounded, 0), sortOrder: sortIdx++ });
+      });
+
+      // Retention absorbs the remainder
+      const usedSoFar = newMilestones.reduce((sum, m) => sum + m.amount, 0);
+      newMilestones.push({ milestoneName: "Final Walkthrough & Project Closeout (10% Retention)", amount: Math.round((total - usedSoFar) * 100) / 100, sortOrder: sortIdx });
+
+      setMilestones(newMilestones);
+      return;
+    }
+
+    // Fresh generation — no user edits
+    const remaining = total - deposit - retentionTarget;
+    const perPhase = phaseNames.length > 0 ? remaining / phaseNames.length : remaining;
+
+    const newMilestones: MilestoneForm[] = [
       { milestoneName: "Deposit upon acceptance", amount: deposit, sortOrder: 0 },
-      { milestoneName: "Completion of Demo & Framing", amount: Math.round(remaining * 0.35 * 100) / 100, sortOrder: 1 },
-      { milestoneName: "Completion of MEP Rough-In", amount: Math.round(remaining * 0.25 * 100) / 100, sortOrder: 2 },
-      { milestoneName: "Completion of Drywall & Paint", amount: Math.round(remaining * 0.2 * 100) / 100, sortOrder: 3 },
-      { milestoneName: "Final Completion & Walkthrough", amount: Math.round(remaining * 0.2 * 100) / 100, sortOrder: 4 },
-    ]);
+    ];
+
+    let usedSoFar = deposit;
+    phaseNames.forEach((name, i) => {
+      // Top-heavy: earlier phases get slightly more
+      const weight = 1 + (phaseNames.length - i) * 0.05;
+      const raw = perPhase * weight;
+      const rounded = raw > 5000 ? Math.round(raw / 500) * 500 : Math.round(raw / 100) * 100;
+      newMilestones.push({ milestoneName: name, amount: rounded, sortOrder: i + 1 });
+      usedSoFar += rounded;
+    });
+
+    // Retention absorbs remainder
+    const retention = Math.round((total - usedSoFar) * 100) / 100;
+    newMilestones.push({ milestoneName: "Final Walkthrough & Project Closeout (10% Retention)", amount: retention, sortOrder: phaseNames.length + 1 });
+
+    setMilestones(newMilestones);
+    setUserEditedMilestones(new Set()); // Reset edit tracking
   };
 
   // Save mutations
@@ -955,28 +1063,32 @@ export default function EstimateForm() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {milestones.map((m, idx) => (
-                      <div key={idx} className="flex items-center gap-3" data-testid={`milestone-${idx}`}>
-                        <Input
-                          className="flex-1"
-                          value={m.milestoneName}
-                          onChange={e => updateMilestone(idx, "milestoneName", e.target.value)}
-                          placeholder="Milestone name"
-                          data-testid={`input-milestone-name-${idx}`}
-                        />
-                        <Input
-                          type="number"
-                          className="w-32"
-                          value={m.amount || ""}
-                          onChange={e => updateMilestone(idx, "amount", parseFloat(e.target.value) || 0)}
-                          placeholder="0.00"
-                          data-testid={`input-milestone-amount-${idx}`}
-                        />
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => removeMilestone(idx)} data-testid={`remove-milestone-${idx}`}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    ))}
+                    {milestones.map((m, idx) => {
+                      const isEdited = userEditedMilestones.has(idx);
+                      return (
+                        <div key={idx} className={`flex items-center gap-3 rounded-md px-2 py-1 ${isEdited ? 'bg-amber-500/10 border border-amber-500/30' : ''}`} data-testid={`milestone-${idx}`}>
+                          {isEdited && <span className="text-[9px] text-amber-500 font-medium whitespace-nowrap">LOCKED</span>}
+                          <Input
+                            className="flex-1"
+                            value={m.milestoneName}
+                            onChange={e => { markMilestoneEdited(idx); updateMilestone(idx, "milestoneName", e.target.value); }}
+                            placeholder="Milestone name"
+                            data-testid={`input-milestone-name-${idx}`}
+                          />
+                          <Input
+                            type="number"
+                            className="w-32"
+                            value={m.amount || ""}
+                            onChange={e => { markMilestoneEdited(idx); updateMilestone(idx, "amount", parseFloat(e.target.value) || 0); }}
+                            placeholder="0.00"
+                            data-testid={`input-milestone-amount-${idx}`}
+                          />
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => { setUserEditedMilestones(prev => { const n = new Set(prev); n.delete(idx); return n; }); removeMilestone(idx); }} data-testid={`remove-milestone-${idx}`}>
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      );
+                    })}
                     <div className="flex justify-between items-center pt-2 border-t text-sm">
                       <span className="text-muted-foreground">Milestone Total</span>
                       <span className={`font-semibold ${Math.abs(calculations.milestoneTotal - calculations.total) > 0.01 ? "text-destructive" : "text-foreground"}`} data-testid="text-milestone-total">
