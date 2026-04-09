@@ -1405,7 +1405,7 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const message = await anthropic.messages.create({
-        model: "claude-haiku-4-20250514",
+        model: "claude-sonnet-4-20250514",
         max_tokens: 512,
         messages: [{ role: "user", content: prompt }],
       });
