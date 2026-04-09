@@ -1,6 +1,8 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, db } from "./storage";
+import { pricingHistory } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { format, addDays } from "date-fns";
 import Anthropic from "@anthropic-ai/sdk";
 import passport from "passport";
@@ -1923,6 +1925,96 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
 
       await storage.updatePurchaseOrder(po.id, { status: "confirmed" });
       res.json({ success: true, entriesAdded: items.filter(i => i.amount > 0).length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
+  // --- Pricing Dashboard Routes ---
+
+  const CSLB_TRADES: Record<string, { code: string; name: string }> = {
+    "demolition": { code: "C-21", name: "Building Moving/Demolition" },
+    "framing": { code: "C-5", name: "Framing & Rough Carpentry" },
+    "electrical": { code: "C-10", name: "Electrical" },
+    "plumbing": { code: "C-36", name: "Plumbing" },
+    "hvac": { code: "C-20", name: "HVAC" },
+    "drywall": { code: "C-9", name: "Drywall" },
+    "paint": { code: "C-33", name: "Painting & Decorating" },
+    "tile": { code: "C-54", name: "Ceramic & Mosaic Tile" },
+    "insulation": { code: "C-2", name: "Insulation & Acoustical" },
+    "roofing": { code: "C-39", name: "Roofing" },
+    "concrete": { code: "C-8", name: "Concrete" },
+    "general": { code: "B", name: "General Building" },
+    "other": { code: "\u2014", name: "Other / Unclassified" },
+  };
+
+  // GET /api/pricing-dashboard — all pricing history grouped by trade, most recent per trade+scopeKeyword
+  app.get("/api/pricing-dashboard", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      // Fetch all pricing history (large limit for dashboard)
+      const all = await storage.getAllRecentPricing(5000);
+
+      // Group by trade, keep most recent entry per trade+scopeKeyword combo
+      const byTradeKeyword: Record<string, typeof all[0]> = {};
+      for (const row of all) {
+        const key = `${row.trade}||${row.scopeKeyword}`;
+        if (!byTradeKeyword[key]) {
+          byTradeKeyword[key] = row;
+        }
+      }
+      const deduped = Object.values(byTradeKeyword);
+
+      // Group by trade
+      const byTrade: Record<string, { entries: typeof all; count: number }> = {};
+      for (const row of deduped) {
+        if (!byTrade[row.trade]) {
+          byTrade[row.trade] = { entries: [], count: 0 };
+        }
+        byTrade[row.trade].entries.push(row);
+      }
+
+      // Count total entries per trade (all rows, not deduped)
+      const tradeCounts: Record<string, number> = {};
+      for (const row of all) {
+        tradeCounts[row.trade] = (tradeCounts[row.trade] || 0) + 1;
+      }
+
+      const result = Object.entries(byTrade).map(([trade, { entries }]) => ({
+        trade,
+        cslb: CSLB_TRADES[trade.toLowerCase()] || { code: "\u2014", name: trade },
+        count: tradeCounts[trade] || entries.length,
+        entries: entries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+      }));
+
+      // Sort by CSLB code
+      result.sort((a, b) => a.cslb.code.localeCompare(b.cslb.code));
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PATCH /api/pricing-dashboard/:id — update subCost of a pricing_history row
+  app.patch("/api/pricing-dashboard/:id", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as Express.User;
+      if (user.role !== "admin" && user.role !== "estimator") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      const id = parseInt(req.params.id as string);
+      const { subCost } = req.body as { subCost: number };
+      if (typeof subCost !== "number" || isNaN(subCost) || subCost < 0) {
+        return res.status(400).json({ error: "Invalid subCost" });
+      }
+      const rows = await db.update(pricingHistory)
+        .set({ subCost, source: "manual_update" })
+        .where(eq(pricingHistory.id, id))
+        .returning();
+      if (!rows[0]) return res.status(404).json({ error: "Not found" });
+      console.log(`[pricing-dashboard] User ${user.email} updated pricing_history id=${id} subCost=${subCost}`);
+      res.json(rows[0]);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
