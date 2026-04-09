@@ -181,9 +181,12 @@ export default function EstimateDetailPage() {
 
   const addEmail = () => {
     const email = emailInput.trim().toLowerCase();
-    if (email && email.includes("@") && !extraEmails.includes(email)) {
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (valid && !extraEmails.includes(email)) {
       setExtraEmails(prev => [...prev, email]);
       setEmailInput("");
+    } else if (email && !valid) {
+      toast({ title: "Invalid email", description: `"${email}" doesn't look right. Check for typos.`, variant: "destructive" });
     }
   };
 

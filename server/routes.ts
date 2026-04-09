@@ -575,7 +575,9 @@ export async function registerRoutes(
 
       // Support multiple recipients: from body, or fall back to estimate's client email
       const extraEmails: string[] = req.body.emails || [];
-      const allRecipients = [...new Set([estimate.clientEmail, ...extraEmails].filter(Boolean))] as string[];
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const allRecipients = [...new Set([estimate.clientEmail, ...extraEmails].filter(Boolean))] 
+        .filter(e => emailRegex.test(e)) as string[];
       if (allRecipients.length === 0) return res.status(400).json({ error: "No recipient emails" });
 
       const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
