@@ -296,14 +296,15 @@ function ChallengeModal({ open, onClose, onSuccess }: ChallengeModalProps) {
         <DialogHeader>
           <DialogTitle className="text-zinc-100">Enable Edit Mode</DialogTitle>
           <DialogDescription className="text-zinc-400">
-            To enable editing, type the confirmation phrase below:
+            To enable editing, type the phrase below exactly:
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+          <p className="text-center text-lg font-semibold text-amber-400">"Are you Omri?"</p>
           <div className={shake ? "animate-shake" : ""}>
             <Input
               ref={inputRef}
-              placeholder="Type here..."
+              placeholder="Type the phrase above..."
               value={value}
               onChange={e => setValue(e.target.value)}
               className="bg-zinc-800 border-zinc-600 text-zinc-100 placeholder:text-zinc-500"
