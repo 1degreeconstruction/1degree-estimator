@@ -167,10 +167,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteEstimate(estimateId: number): Promise<void> {
-    // Delete all related records first
+    // Delete all related records first (order matters for FK constraints)
     await db.delete(estimateMessages).where(eq(estimateMessages.estimateId, estimateId));
     await db.delete(emailLogs).where(eq(emailLogs.estimateId, estimateId));
     await db.delete(activityLog).where(eq(activityLog.estimateId, estimateId));
+    await db.delete(pricingHistory).where(eq(pricingHistory.estimateId, estimateId));
+    await db.delete(estimatePurchaseOrderLinks).where(eq(estimatePurchaseOrderLinks.estimateId, estimateId));
     // Delete breakdowns via line items
     const items = await this.getLineItems(estimateId);
     for (const item of items) {
@@ -178,9 +180,8 @@ export class DatabaseStorage implements IStorage {
     }
     await this.deleteLineItemsByEstimate(estimateId);
     await this.deleteMilestonesByEstimate(estimateId);
-    // Delete events
     await db.delete(estimateEvents).where(eq(estimateEvents.estimateId, estimateId));
-    // Delete the estimate itself
+    // Finally delete the estimate
     await db.delete(estimates).where(eq(estimates.id, estimateId));
   }
 
