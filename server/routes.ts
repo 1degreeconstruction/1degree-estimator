@@ -8,6 +8,30 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import type { User } from "@shared/schema";
+import multer from "multer";
+import { createClient } from "@supabase/supabase-js";
+import Tesseract from "tesseract.js";
+import sharp from "sharp";
+import { PDFParse } from "pdf-parse";
+
+// Supabase client for file storage
+const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseKey = process.env.SUPABASE_ANON_KEY || "";
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Multer memory storage for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF, JPG, and PNG files are allowed"));
+    }
+  },
+});
 
 // Extend Express Request to include user
 declare global {
@@ -1525,6 +1549,265 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
       const unit = allRates[0].unit;
 
       res.json({ rates: { low, mid, high, unit }, tradeName: matchedKey, subRates });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Purchase Orders ───────────────────────────────────────────────────────
+
+  // Helper: run OCR + AI parse on a PO record (async, fire-and-forget)
+  async function processPurchaseOrder(poId: number, fileBuffer: Buffer, mimetype: string) {
+    try {
+      // Step 1: Convert to image buffer if needed
+      let imageBuffer: Buffer;
+      if (mimetype === "application/pdf") {
+        // Parse PDF and get first page text directly, and also try converting to image
+        try {
+          const parser = new PDFParse({ data: new Uint8Array(fileBuffer) });
+          const textResult = await parser.getText();
+          const rawText = textResult.text;
+          await parser.destroy();
+          if (rawText && rawText.trim().length > 20) {
+            // We got usable text from the PDF directly - skip Tesseract
+            await storage.updatePurchaseOrder(poId, { status: "ocr_complete", rawOcrText: rawText });
+            await parsePurchaseOrderWithAI(poId, rawText);
+            return;
+          }
+        } catch (_) { /* fall through to image conversion */ }
+        // For scanned PDFs (pure images), fall back to Tesseract on the raw buffer
+        imageBuffer = fileBuffer;
+      } else {
+        imageBuffer = fileBuffer;
+      }
+
+      // Step 2: Pre-process image with sharp for better OCR
+      let processedBuffer: Buffer;
+      try {
+        processedBuffer = await sharp(imageBuffer)
+          .grayscale()
+          .normalize()
+          .sharpen()
+          .toBuffer();
+      } catch {
+        processedBuffer = imageBuffer;
+      }
+
+      // Step 3: Run Tesseract OCR
+      const { data: { text } } = await Tesseract.recognize(processedBuffer, "eng", {
+        logger: () => {}, // suppress logs
+      });
+
+      const rawText = text.trim();
+      await storage.updatePurchaseOrder(poId, { status: "ocr_complete", rawOcrText: rawText });
+
+      // Step 4: Parse with AI
+      await parsePurchaseOrderWithAI(poId, rawText);
+    } catch (err: any) {
+      console.error(`OCR error for PO ${poId}:`, err);
+      await storage.updatePurchaseOrder(poId, { status: "error", rawOcrText: `OCR failed: ${err.message}` });
+    }
+  }
+
+  async function parsePurchaseOrderWithAI(poId: number, rawText: string) {
+    try {
+      const parsePrompt = `Extract pricing data from this subcontractor invoice/purchase order text.
+
+RAW OCR TEXT:
+${rawText}
+
+Extract ALL line items with costs. Return ONLY valid JSON:
+{
+  "subName": "company name if found",
+  "subPhone": "phone if found",
+  "date": "invoice date if found",
+  "projectAddress": "address if found",
+  "items": [
+    {
+      "trade": "plumbing|electrical|demolition|framing|drywall|paint|tile|hvac|general|other",
+      "description": "what the line item is for",
+      "amount": 1234.56,
+      "unit": "per job|per room|per SF|per LF|per item|lump sum"
+    }
+  ],
+  "total": 1234.56,
+  "confidence": "high|medium|low"
+}
+
+If the text is hard to read or unclear, set confidence to "low" and do your best.
+If you can't extract anything useful, return {"items": [], "confidence": "low", "error": "Could not parse"}.`;
+
+      const anthropicClient = new Anthropic();
+      const msg = await anthropicClient.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        messages: [{ role: "user", content: parsePrompt }],
+      });
+
+      const responseText = msg.content[0].type === "text" ? msg.content[0].text : "";
+      // Extract JSON from response
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("No JSON in AI response");
+      const parsedData = JSON.parse(jsonMatch[0]);
+
+      await storage.updatePurchaseOrder(poId, { status: "parsed", parsedData });
+    } catch (err: any) {
+      console.error(`AI parse error for PO ${poId}:`, err);
+      await storage.updatePurchaseOrder(poId, {
+        status: "parsed",
+        parsedData: { items: [], confidence: "low", error: `Parse failed: ${err.message}` },
+      });
+    }
+  }
+
+  // POST /api/purchase-orders/upload
+  app.post("/api/purchase-orders/upload", requireAuth as any, (req: Request, res: Response, next: NextFunction) => {
+    upload.single("file")(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message });
+      next();
+    });
+  }, async (req: Request, res: Response) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const user = req.user as Express.User;
+      const { estimateId, notes } = req.body;
+      const file = req.file;
+
+      // Upload to Supabase Storage
+      const timestamp = Date.now();
+      const ext = file.originalname.split(".").pop() || "bin";
+      const storagePath = `${timestamp}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+
+      let fileUrl = "";
+      if (supabaseUrl && supabaseKey) {
+        const { error: uploadError } = await supabase.storage
+          .from("purchase-orders")
+          .upload(storagePath, file.buffer, {
+            contentType: file.mimetype,
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error("Supabase upload error:", uploadError);
+          // Fall back to base64 data URL for development
+          fileUrl = `data:${file.mimetype};base64,${file.buffer.toString("base64").slice(0, 100)}...`;
+        } else {
+          const { data: urlData } = supabase.storage
+            .from("purchase-orders")
+            .getPublicUrl(storagePath);
+          fileUrl = urlData.publicUrl;
+        }
+      } else {
+        fileUrl = `/uploads/${storagePath}`; // fallback
+      }
+
+      // Save PO record
+      const po = await storage.createPurchaseOrder({
+        estimateId: estimateId ? parseInt(estimateId) : null,
+        uploadedByUserId: user.id,
+        filename: file.originalname,
+        fileUrl,
+        status: "pending",
+        notes: notes || null,
+        rawOcrText: null,
+        parsedData: null,
+      });
+
+      // Kick off async OCR + parse (fire and forget)
+      const fileBuffer = file.buffer;
+      const mimetype = file.mimetype;
+      setImmediate(() => processPurchaseOrder(po.id, fileBuffer, mimetype));
+
+      res.json(po);
+    } catch (err: any) {
+      console.error("PO upload error:", err);
+      res.status(500).json({ error: err.message || "Upload failed" });
+    }
+  });
+
+  // GET /api/purchase-orders
+  app.get("/api/purchase-orders", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const estimateId = req.query.estimateId ? parseInt(req.query.estimateId as string) : undefined;
+      const pos = await storage.getPurchaseOrders(estimateId);
+      res.json(pos);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/purchase-orders/:id
+  app.get("/api/purchase-orders/:id", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const po = await storage.getPurchaseOrder(parseInt(req.params.id as string));
+      if (!po) return res.status(404).json({ error: "Not found" });
+      res.json(po);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/purchase-orders/:id/parse  (re-trigger AI parse manually)
+  app.post("/api/purchase-orders/:id/parse", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const po = await storage.getPurchaseOrder(parseInt(req.params.id as string));
+      if (!po) return res.status(404).json({ error: "Not found" });
+      if (!po.rawOcrText) return res.status(400).json({ error: "No OCR text available yet" });
+      setImmediate(() => parsePurchaseOrderWithAI(po.id, po.rawOcrText!));
+      res.json({ message: "Parse triggered" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PATCH /api/purchase-orders/:id  (update parsed data after user edits)
+  app.patch("/api/purchase-orders/:id", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const po = await storage.getPurchaseOrder(parseInt(req.params.id as string));
+      if (!po) return res.status(404).json({ error: "Not found" });
+      const { parsedData, estimateId } = req.body;
+      const updates: Record<string, unknown> = {};
+      if (parsedData !== undefined) updates.parsedData = parsedData;
+      if (estimateId !== undefined) updates.estimateId = estimateId ? parseInt(estimateId) : null;
+      const updated = await storage.updatePurchaseOrder(po.id, updates);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/purchase-orders/:id/confirm — insert into pricing_history
+  app.post("/api/purchase-orders/:id/confirm", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const po = await storage.getPurchaseOrder(parseInt(req.params.id as string));
+      if (!po) return res.status(404).json({ error: "Not found" });
+      if (!po.parsedData) return res.status(400).json({ error: "No parsed data to confirm" });
+
+      const parsed = po.parsedData as {
+        items?: Array<{ trade: string; description: string; amount: number; unit: string }>;
+        subName?: string;
+        total?: number;
+      };
+
+      const items = parsed.items || [];
+      if (items.length > 0) {
+        const entries = items
+          .filter(item => item.amount && item.amount > 0)
+          .map(item => ({
+            trade: item.trade || "general",
+            scopeKeyword: item.description.slice(0, 50),
+            subCost: item.amount,
+            city: undefined,
+            source: "purchase_order",
+            estimateId: po.estimateId || undefined,
+          }));
+        if (entries.length > 0) {
+          await storage.logPricing(entries);
+        }
+      }
+
+      await storage.updatePurchaseOrder(po.id, { status: "confirmed" });
+      res.json({ success: true, entriesAdded: items.filter(i => i.amount > 0).length });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -209,6 +209,24 @@ export const insertLineItemBreakdownSchema = createInsertSchema(lineItemBreakdow
 export type InsertLineItemBreakdown = z.infer<typeof insertLineItemBreakdownSchema>;
 export type LineItemBreakdown = typeof lineItemBreakdowns.$inferSelect;
 
+// Purchase Orders (sub invoices & PO uploads with OCR)
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: serial("id").primaryKey(),
+  estimateId: integer("estimate_id"),
+  uploadedByUserId: integer("uploaded_by_user_id"),
+  filename: text("filename").notNull(),
+  fileUrl: text("file_url").notNull(),
+  rawOcrText: text("raw_ocr_text"),
+  parsedData: jsonb("parsed_data"),
+  status: text("status").notNull().default("pending"), // pending | ocr_complete | parsed | confirmed | error
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({ id: true });
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
 // Phase group constants
 export const PHASE_GROUPS = [
   { value: "permit_design", label: "Permit & Design" },

@@ -7,6 +7,7 @@ import {
   type EstimateEvent, type InsertEvent, estimateEvents,
   type User, type InsertUser, users,
   type PricingHistory, pricingHistory,
+  type PurchaseOrder, type InsertPurchaseOrder, purchaseOrders,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -68,6 +69,12 @@ export interface IStorage {
 
   // AI Log
   updateEstimateAiLog(estimateId: number, logEntry: string): Promise<void>;
+
+  // Purchase Orders
+  createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
+  getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined>;
+  getPurchaseOrders(estimateId?: number): Promise<PurchaseOrder[]>;
+  updatePurchaseOrder(id: number, updates: Partial<PurchaseOrder>): Promise<PurchaseOrder | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -243,6 +250,31 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
+  // Purchase Orders
+  async createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder> {
+    const rows = await db.insert(purchaseOrders).values(po).returning();
+    return rows[0];
+  }
+
+  async getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> {
+    const rows = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    return rows[0];
+  }
+
+  async getPurchaseOrders(estimateId?: number): Promise<PurchaseOrder[]> {
+    if (estimateId !== undefined) {
+      return db.select().from(purchaseOrders)
+        .where(eq(purchaseOrders.estimateId, estimateId))
+        .orderBy(desc(purchaseOrders.createdAt));
+    }
+    return db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
+  }
+
+  async updatePurchaseOrder(id: number, updates: Partial<PurchaseOrder>): Promise<PurchaseOrder | undefined> {
+    const rows = await db.update(purchaseOrders).set(updates).where(eq(purchaseOrders.id, id)).returning();
+    return rows[0];
+  }
+
   // AI Log
   async updateEstimateAiLog(estimateId: number, logEntry: string): Promise<void> {
     const existing = await this.getEstimate(estimateId);
@@ -294,6 +326,23 @@ async function initializeDb() {
     `);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_breakdowns_line_item ON line_item_breakdowns(line_item_id);
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS purchase_orders (
+        id SERIAL PRIMARY KEY,
+        estimate_id INTEGER REFERENCES estimates(id),
+        uploaded_by_user_id INTEGER REFERENCES users(id),
+        filename TEXT NOT NULL,
+        file_url TEXT NOT NULL,
+        raw_ocr_text TEXT,
+        parsed_data JSONB,
+        status TEXT NOT NULL DEFAULT 'pending',
+        notes TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_po_estimate ON purchase_orders(estimate_id);
     `);
     console.log("DB initialization complete.");
   } catch (err) {

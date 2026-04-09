@@ -1,3 +1,4 @@
+import React, { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { AdminLayout } from "@/components/admin-layout";
@@ -8,13 +9,14 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Edit, ExternalLink, Copy, Send, ArrowLeft,
-  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers
+  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers, Upload, Plus
 } from "lucide-react";
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getStatusLabel } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { PHASE_GROUPS, GROUPED_PHASES } from "@shared/schema";
 import type { Estimate, SalesRep, LineItem, PaymentMilestone, EstimateEvent } from "@shared/schema";
+import { getToken } from "@/lib/auth";
 
 type EstimateDetail = Estimate & {
   salesRep?: SalesRep;
@@ -36,6 +38,121 @@ function getEventIcon(type: string) {
     case "approved": return <CheckCircle className="w-4 h-4 text-green-500" />;
     default: return <Clock className="w-4 h-4 text-orange-500" />;
   }
+}
+
+interface PurchaseOrderBrief {
+  id: number;
+  filename: string;
+  status: string;
+  createdAt: string;
+}
+
+function EstimatePurchaseOrders({ estimateId }: { estimateId: number }) {
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const { data: pos, refetch } = useQuery<PurchaseOrderBrief[]>({
+    queryKey: ["/api/purchase-orders", estimateId],
+    queryFn: async () => {
+      const token = getToken();
+      const res = await fetch(`/api/purchase-orders?estimateId=${estimateId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("estimateId", String(estimateId));
+      const token = getToken();
+      const res = await fetch("/api/purchase-orders/upload", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      toast({ title: "Invoice uploaded", description: "Processing started — check Purchase Orders page." });
+      setTimeout(() => refetch(), 2000);
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const map: Record<string, string> = {
+      pending: "bg-secondary text-secondary-foreground",
+      ocr_complete: "bg-blue-100 text-blue-700",
+      parsed: "bg-amber-100 text-amber-700",
+      confirmed: "bg-green-100 text-green-700",
+      error: "bg-red-100 text-red-700",
+    };
+    return map[status] || "bg-muted text-muted-foreground";
+  };
+
+  return (
+    <Card data-testid="card-purchase-orders">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Upload className="w-4 h-4" />
+            Sub Invoices / POs
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+            >
+              <Plus className="w-3 h-3" />{uploading ? "Uploading..." : "Upload"}
+            </Button>
+            <Link href="/purchase-orders">
+              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1">
+                View All <ExternalLink className="w-3 h-3" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {!pos || pos.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No invoices linked yet. Upload a sub invoice to track real costs for this estimate.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {pos.map(po => (
+              <div key={po.id} className="flex items-center justify-between gap-2">
+                <span className="text-xs truncate flex-1">{po.filename}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${getStatusBadge(po.status)}`}>
+                  {po.status.replace(/_/g, " ")}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function EstimateDetailPage() {
@@ -289,6 +406,9 @@ export default function EstimateDetailPage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Purchase Orders */}
+            <EstimatePurchaseOrders estimateId={estimate.id} />
           </div>
 
           {/* Right - Summary & Timeline */}
