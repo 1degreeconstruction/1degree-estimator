@@ -529,7 +529,7 @@ export async function registerRoutes(
               </div>
             </div>`;
 
-            await sendGmailEmail({
+            const emailResult = await sendGmailEmail({
               senderName: "1 Degree Construction",
               senderEmail: teamEmail,
               accessToken: teamAccessToken,
@@ -537,10 +537,11 @@ export async function registerRoutes(
               to: estimate.clientEmail,
               subject: `1DC Direct Line Responded! - ${estimate.estimateNumber}`,
               html,
-            }).catch(() => {});
+            }).catch((err: any) => { console.error("[chat-reply-email]", err.message); return null; });
+            console.log(`[chat-reply-email] to=${estimate.clientEmail} result=${emailResult?.messageId || "FAILED"}`);
           }
         }
-      } catch { /* non-fatal */ }
+      } catch (err: any) { console.error("[chat-reply-email] outer:", err.message); }
 
       res.json(msg);
     } catch (err: any) {

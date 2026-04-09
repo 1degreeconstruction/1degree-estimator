@@ -194,7 +194,11 @@ export default function TeamChat() {
                       <p className="whitespace-pre-wrap">{msg.message}</p>
                       <div className="flex items-center gap-1 mt-1.5 opacity-50">
                         <Clock className="w-2.5 h-2.5" />
-                        <span className="text-[10px]">{timeSince(msg.createdAt)}</span>
+                        <span className="text-[10px]">
+                          {new Date(msg.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                        </span>
+                        {msg.senderType === "team" && <span className="text-[10px]"> · email sent to client</span>}
+                        {msg.senderType === "client" && <span className="text-[10px]"> · notified all reps</span>}
                       </div>
                     </div>
                   </div>
