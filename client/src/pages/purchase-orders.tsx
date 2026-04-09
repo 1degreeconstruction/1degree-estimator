@@ -22,6 +22,8 @@ interface ParsedItem {
   description: string;
   amount: number;
   unit: string;
+  quantity?: number;
+  unitCost?: number;
 }
 
 interface ParsedData {
@@ -290,7 +292,7 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
   };
 
   const addItem = () => {
-    setEditedItems(prev => [...prev, { trade: "general", description: "", amount: 0, unit: "lump sum" }]);
+    setEditedItems(prev => [...prev, { trade: "general", description: "", amount: 0, unit: "lump sum", quantity: 1, unitCost: 0 }]);
   };
 
   const isProcessing = po.status === "pending" || po.status === "ocr_complete";
@@ -471,10 +473,12 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-xs text-muted-foreground">
-                        <th className="text-left pb-2 pr-2 font-medium w-32">Trade</th>
+                        <th className="text-left pb-2 pr-2 font-medium w-28">Trade</th>
                         <th className="text-left pb-2 pr-2 font-medium">Description</th>
-                        <th className="text-right pb-2 pr-2 font-medium w-28">Amount ($)</th>
-                        <th className="text-left pb-2 pr-2 font-medium w-32">Unit</th>
+                        <th className="text-center pb-2 pr-2 font-medium w-16">Qty</th>
+                        <th className="text-right pb-2 pr-2 font-medium w-24">Unit Cost</th>
+                        <th className="text-right pb-2 pr-2 font-medium w-24">Total ($)</th>
+                        <th className="text-left pb-2 pr-2 font-medium w-28">Unit</th>
                         <th className="w-8"></th>
                       </tr>
                     </thead>
@@ -505,12 +509,43 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
                           </td>
                           <td className="py-1.5 pr-2">
                             <Input
-                              className="h-7 text-xs text-right"
+                              className="h-7 text-xs text-center w-16"
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={item.quantity || 1}
+                              onChange={e => {
+                                const qty = parseInt(e.target.value) || 1;
+                                const uc = item.unitCost || item.amount / (item.quantity || 1);
+                                const newItems = [...editedItems];
+                                newItems[idx] = { ...item, quantity: qty, unitCost: uc, amount: Math.round(qty * uc * 100) / 100 };
+                                setEditedItems(newItems);
+                              }}
+                            />
+                          </td>
+                          <td className="py-1.5 pr-2">
+                            <Input
+                              className="h-7 text-xs text-right w-24"
                               type="number"
                               min="0"
                               step="0.01"
+                              value={item.unitCost || item.amount / (item.quantity || 1)}
+                              onChange={e => {
+                                const uc = parseFloat(e.target.value) || 0;
+                                const qty = item.quantity || 1;
+                                const newItems = [...editedItems];
+                                newItems[idx] = { ...item, unitCost: uc, amount: Math.round(qty * uc * 100) / 100 };
+                                setEditedItems(newItems);
+                              }}
+                            />
+                          </td>
+                          <td className="py-1.5 pr-2">
+                            <Input
+                              className="h-7 text-xs text-right w-24 bg-muted/50"
+                              type="number"
                               value={item.amount}
-                              onChange={e => updateItem(idx, "amount", e.target.value)}
+                              readOnly
+                              tabIndex={-1}
                             />
                           </td>
                           <td className="py-1.5 pr-2">

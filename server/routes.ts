@@ -1663,7 +1663,9 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
 RAW OCR TEXT:
 ${rawText}
 
-Extract ALL line items with costs. Return ONLY valid JSON:
+Extract ALL line items with costs. IMPORTANT: When a line item has a quantity (e.g., "2 windows @ $200 each" or "6 recessed lights $130/ea"), extract the quantity and unit cost separately. Set amount = quantity * unitCost. If no quantity is indicated, set quantity to 1 and unitCost equal to amount.
+
+Return ONLY valid JSON:
 {
   "subName": "company name if found",
   "subPhone": "phone if found",
@@ -1673,6 +1675,8 @@ Extract ALL line items with costs. Return ONLY valid JSON:
     {
       "trade": "plumbing|electrical|demolition|framing|drywall|paint|tile|hvac|general|other",
       "description": "what the line item is for",
+      "quantity": 1,
+      "unitCost": 1234.56,
       "amount": 1234.56,
       "unit": "per job|per room|per SF|per LF|per item|lump sum"
     }
