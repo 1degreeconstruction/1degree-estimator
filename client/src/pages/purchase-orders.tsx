@@ -33,6 +33,11 @@ interface ParsedData {
   total?: number;
   confidence?: "high" | "medium" | "low";
   error?: string;
+  clarifyingQuestions?: Array<{
+    itemIndex: number;
+    question: string;
+    reason: string;
+  }>;
 }
 
 interface PurchaseOrder {
@@ -208,8 +213,32 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
   const [expanded, setExpanded] = useState(po.status === "parsed" || po.status === "error");
   const [showOcr, setShowOcr] = useState(false);
   const [editedItems, setEditedItems] = useState<ParsedItem[]>(po.parsedData?.items || []);
+  const [clarifyAnswers, setClarifyAnswers] = useState<Record<number, string>>({});
+  const [clarifySubmitted, setClarifySubmitted] = useState(false);
+  const [clarifyLoading, setClarifyLoading] = useState(false);
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  const questions = po.parsedData?.clarifyingQuestions || [];
+  const unansweredQuestions = questions.filter(q => !clarifyAnswers[q.itemIndex] && !clarifySubmitted);
+
+  const handleClarifySubmit = async () => {
+    if (Object.keys(clarifyAnswers).length === 0) return;
+    setClarifyLoading(true);
+    try {
+      // Re-parse with the clarifying context appended
+      const context = questions.map(q => `Q: ${q.question}\nA: ${clarifyAnswers[q.itemIndex] || "(no answer)"}`).join("\n");
+      const res = await apiRequest("POST", `/api/purchase-orders/${po.id}/parse`, { additionalContext: context });
+      const data = await res.json();
+      setClarifySubmitted(true);
+      onRefresh();
+      toast({ title: "Updated", description: "Pricing refined with your answers." });
+    } catch {
+      toast({ title: "Error", description: "Could not refine pricing.", variant: "destructive" });
+    } finally {
+      setClarifyLoading(false);
+    }
+  };
 
   // Keep editedItems in sync with parsedData changes
   const parsedData = po.parsedData;
@@ -344,6 +373,39 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
                 {parsedData.error && (
                   <span className="text-xs text-muted-foreground">{parsedData.error}</span>
                 )}
+              </div>
+            )}
+
+            {/* Clarifying questions */}
+            {po.status === "parsed" && questions.length > 0 && !clarifySubmitted && (
+              <div className="border border-amber-500/30 bg-amber-500/5 rounded-md p-3 space-y-3">
+                <p className="text-xs font-medium text-amber-600">A few quick questions to improve pricing accuracy:</p>
+                {questions.map((q, i) => (
+                  <div key={i} className="space-y-1">
+                    <label className="text-xs text-foreground">{q.question}</label>
+                    <input
+                      className="w-full text-xs border rounded px-2 py-1 bg-background"
+                      placeholder="Your answer..."
+                      value={clarifyAnswers[q.itemIndex] || ""}
+                      onChange={e => setClarifyAnswers(prev => ({ ...prev, [q.itemIndex]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleClarifySubmit}
+                    disabled={clarifyLoading || Object.keys(clarifyAnswers).length === 0}
+                    className="text-xs px-3 py-1 bg-amber-500 text-white rounded font-medium disabled:opacity-50"
+                  >
+                    {clarifyLoading ? "Updating..." : "Refine Pricing"}
+                  </button>
+                  <button
+                    onClick={() => setClarifySubmitted(true)}
+                    className="text-xs px-3 py-1 border rounded text-muted-foreground"
+                  >
+                    Skip
+                  </button>
+                </div>
               </div>
             )}
 

@@ -1664,11 +1664,25 @@ Extract ALL line items with costs. Return ONLY valid JSON:
     }
   ],
   "total": 1234.56,
-  "confidence": "high|medium|low"
+  "confidence": "high|medium|low",
+  "clarifyingQuestions": [
+    {
+      "itemIndex": 0,
+      "question": "short targeted question",
+      "reason": "why this helps with pricing"
+    }
+  ]
 }
 
+FOR CLARIFYING QUESTIONS:
+- Only generate questions for lump sum items where the scope is vague (e.g., just says "framing" or "plumbing" with no quantity)
+- Max 3 questions total — pick only the most impactful ones
+- Questions should help convert lump sums to per-unit pricing (e.g., "How many bathrooms did this cover?" "Approximate square footage?" "Was this rough-in only or finish too?")
+- If the scope is already specific enough, return clarifyingQuestions as an empty array []
+- Keep questions short — one sentence max
+
 If the text is hard to read or unclear, set confidence to "low" and do your best.
-If you can't extract anything useful, return {"items": [], "confidence": "low", "error": "Could not parse"}.`;
+If you can't extract anything useful, return {"items": [], "confidence": "low", "clarifyingQuestions": [], "error": "Could not parse"}.`;
 
       const anthropicClient = new Anthropic();
       const msg = await anthropicClient.messages.create({
@@ -1808,13 +1822,17 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
     }
   });
 
-  // POST /api/purchase-orders/:id/parse  (re-trigger AI parse manually)
+  // POST /api/purchase-orders/:id/parse  (re-trigger AI parse manually, optionally with clarifying context)
   app.post("/api/purchase-orders/:id/parse", requireAuth as any, async (req: Request, res: Response) => {
     try {
       const po = await storage.getPurchaseOrder(parseInt(req.params.id as string));
       if (!po) return res.status(404).json({ error: "Not found" });
       if (!po.rawOcrText) return res.status(400).json({ error: "No OCR text available yet" });
-      setImmediate(() => parsePurchaseOrderWithAI(po.id, po.rawOcrText!));
+      const additionalContext = req.body?.additionalContext || "";
+      const enrichedOcr = additionalContext
+        ? `${po.rawOcrText}\n\n--- USER CLARIFICATIONS ---\n${additionalContext}`
+        : po.rawOcrText;
+      setImmediate(() => parsePurchaseOrderWithAI(po.id, enrichedOcr));
       res.json({ message: "Parse triggered" });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
