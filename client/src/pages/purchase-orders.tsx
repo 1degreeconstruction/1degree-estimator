@@ -585,7 +585,8 @@ export default function PurchaseOrdersPage() {
       if (notes) formData.append("notes", notes);
 
       const token = getToken();
-      const res = await fetch("/api/purchase-orders/upload", {
+      const apiBase = import.meta.env.PROD ? "https://onedegree-estimator.onrender.com" : "";
+      const res = await fetch(`${apiBase}/api/purchase-orders/upload`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: formData,
