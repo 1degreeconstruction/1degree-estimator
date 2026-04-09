@@ -1378,80 +1378,8 @@ export default function EstimateForm() {
             </Card>
           </div>
 
-          {/* Right column - calculations panel */}
+          {/* Right column - pricing assistant only */}
           <div className="space-y-6">
-            <Card className="sticky top-6" data-testid="section-calculations">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-sm font-semibold">Estimate Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Internal Cost</span>
-                  <span className="font-mono" data-testid="text-total-sub-cost">{formatCurrency(calculations.totalSubCost)}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm gap-2">
-                  <span className="text-muted-foreground whitespace-nowrap">Markup</span>
-                  <div className="flex items-center gap-1">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={500}
-                      step={5}
-                      value={markupRate}
-                      onChange={e => setMarkupRate(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="h-7 w-20 text-sm font-mono text-right"
-                      data-testid="input-markup-rate"
-                    />
-                    <span className="text-xs text-muted-foreground">%</span>
-                  </div>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal ({markupRate}% markup)</span>
-                  <span className="font-mono" data-testid="text-subtotal">{formatCurrency(calculations.subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">3% Allowance</span>
-                  <span className="font-mono" data-testid="text-allowance">{formatCurrency(calculations.allowance)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between font-semibold">
-                  <span>Total Client Price</span>
-                  <span className="font-mono text-primary" data-testid="text-total-client-price">{formatCurrency(calculations.total)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Deposit Required</span>
-                  <span className="font-mono" data-testid="text-deposit">{formatCurrency(calculations.deposit)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Margin</span>
-                  <span className="font-mono">{formatCurrency(calculations.subtotal - calculations.totalSubCost)}</span>
-                </div>
-
-                <Separator />
-
-                <div className="space-y-2 pt-2">
-                  <Button
-                    className="w-full gap-2"
-                    variant="outline"
-                    onClick={() => handleSave("draft")}
-                    disabled={isPending}
-                    data-testid="button-save-draft"
-                  >
-                    <Save className="w-4 h-4" />
-                    Save Draft
-                  </Button>
-                  <Button
-                    className="w-full gap-2"
-                    onClick={() => handleSave("sent")}
-                    disabled={isPending}
-                    data-testid="button-send"
-                  >
-                    <Send className="w-4 h-4" />
-                    Send to Client
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
 
             {/* Pricing Assistant - inline chat */}
             <Card className="mt-4" data-testid="section-pricing-assistant">
@@ -1507,6 +1435,83 @@ export default function EstimateForm() {
           </div>
         </div>
       </div>
+
+      {/* Fixed bottom banner — Estimate Summary */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80" data-testid="section-calculations">
+        <div className="max-w-7xl mx-auto px-4 md:pl-64">
+          <div className="flex items-center gap-4 py-3 overflow-x-auto">
+            {/* Stats row */}
+            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+              <span className="text-muted-foreground">Cost:</span>
+              <span className="font-mono font-medium" data-testid="text-total-sub-cost">{formatCurrency(calculations.totalSubCost)}</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+              <span className="text-muted-foreground">Markup:</span>
+              <Input
+                type="number"
+                min={0}
+                max={500}
+                step={5}
+                value={markupRate}
+                onChange={e => setMarkupRate(Math.max(0, parseFloat(e.target.value) || 0))}
+                className="h-6 w-16 text-xs font-mono text-right inline-block"
+                data-testid="input-markup-rate"
+              />
+              <span className="text-muted-foreground">%</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+              <span className="text-muted-foreground">Subtotal:</span>
+              <span className="font-mono" data-testid="text-subtotal">{formatCurrency(calculations.subtotal)}</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+              <span className="text-muted-foreground">Allowance:</span>
+              <span className="font-mono" data-testid="text-allowance">{formatCurrency(calculations.allowance)}</span>
+            </div>
+            <Separator orientation="vertical" className="h-6" />
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <span className="text-sm font-semibold">Total:</span>
+              <span className="text-sm font-mono font-bold text-primary" data-testid="text-total-client-price">{formatCurrency(calculations.total)}</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+              <span className="text-muted-foreground">Deposit:</span>
+              <span className="font-mono" data-testid="text-deposit">{formatCurrency(calculations.deposit)}</span>
+            </div>
+            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+              <span className="text-muted-foreground">Margin:</span>
+              <span className="font-mono">{formatCurrency(calculations.subtotal - calculations.totalSubCost)}</span>
+            </div>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Action buttons */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8"
+              onClick={() => handleSave("draft")}
+              disabled={isPending}
+              data-testid="button-save-draft"
+            >
+              <Save className="w-3.5 h-3.5" />
+              Save Draft
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5 h-8 bg-orange-600 hover:bg-orange-700"
+              onClick={() => handleSave("sent")}
+              disabled={isPending}
+              data-testid="button-send"
+            >
+              <Send className="w-3.5 h-3.5" />
+              Send to Client
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom padding so content isn't hidden behind the banner */}
+      <div className="h-16" />
     </AdminLayout>
   );
 }
