@@ -169,12 +169,12 @@ function UploadZone({ onUpload }: { onUpload: (file: File, estimateId?: string, 
             {/* Associate with estimate */}
             <div className="space-y-1.5">
               <Label className="text-xs">Link to Estimate (optional)</Label>
-              <Select value={estimateId} onValueChange={setEstimateId}>
+              <Select value={estimateId || "none"} onValueChange={(v) => setEstimateId(v === "none" ? "" : v)}>
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">None</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                   {estimates?.map(e => (
                     <SelectItem key={e.id} value={String(e.id)}>
                       {e.estimateNumber} — {e.clientName}
