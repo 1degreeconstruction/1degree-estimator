@@ -17,7 +17,7 @@ function getGmailClient(accessToken: string, refreshToken: string | null) {
   return google.gmail({ version: "v1", auth: oauth2Client });
 }
 
-const TEAM_REPLY_TO = "1degreeconstruction@gmail.com";
+const TEAM_REPLY_TO = "1dcestimatesdonotreply@gmail.com";
 
 // ── Encode email as RFC 2822 base64url ────────────────────────────────────────
 function buildRawEmail(opts: {

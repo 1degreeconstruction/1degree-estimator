@@ -563,7 +563,7 @@ export async function registerRoutes(
 
         await storage.upsertEmailByMessageId(msg.messageId, {
           estimateId: estimateId ?? undefined,
-          recipientEmail: "1degreeconstruction@gmail.com",
+          recipientEmail: "1dcestimatesdonotreply@gmail.com",
           fromEmail: msg.fromEmail,
           fromName: msg.fromName,
           subject: msg.subject,
