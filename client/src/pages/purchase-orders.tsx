@@ -227,14 +227,14 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
   const qc = useQueryClient();
 
   const questions = po.parsedData?.clarifyingQuestions || [];
-  const unansweredQuestions = questions.filter(q => !clarifyAnswers[q.itemIndex] && !clarifySubmitted);
+  const unansweredQuestions = questions.filter((_, i) => !clarifyAnswers[i] && !clarifySubmitted);
 
   const handleClarifySubmit = async () => {
     if (Object.keys(clarifyAnswers).length === 0) return;
     setClarifyLoading(true);
     try {
       // Re-parse with the clarifying context appended
-      const context = questions.map(q => `Q: ${q.question}\nA: ${clarifyAnswers[q.itemIndex] || "(no answer)"}`).join("\n");
+      const context = questions.map((q, i) => `Q: ${q.question}\nA: ${clarifyAnswers[i] || "(no answer)"}`).join("\n");
       const res = await apiRequest("POST", `/api/purchase-orders/${po.id}/parse`, { additionalContext: context });
       const data = await res.json();
       setClarifySubmitted(true);
@@ -449,8 +449,8 @@ function PORow({ po, onRefresh }: { po: PurchaseOrder; onRefresh: () => void }) 
                     <input
                       className="w-full text-xs border rounded px-2 py-1 bg-background"
                       placeholder="Your answer..."
-                      value={clarifyAnswers[q.itemIndex] || ""}
-                      onChange={e => setClarifyAnswers(prev => ({ ...prev, [q.itemIndex]: e.target.value }))}
+                      value={clarifyAnswers[i] || ""}
+                      onChange={e => setClarifyAnswers(prev => ({ ...prev, [i]: e.target.value }))}
                     />
                   </div>
                 ))}
