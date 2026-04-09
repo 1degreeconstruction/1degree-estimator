@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useTheme } from "./theme-provider";
-import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X, Users, LogOut, MessageSquare, Upload, Database, Inbox } from "lucide-react";
+import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X, Users, LogOut, MessageSquare, Upload, Database, Inbox, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   });
   const unreadCount = inboxStatus?.unreadCount ?? 0;
 
+  const { data: chatUnread } = useQuery<{ count: number }>({
+    queryKey: ["/api/messages/unread"],
+    refetchInterval: 15000,
+  });
+  const chatUnreadCount = chatUnread?.count ?? 0;
+
   const isAdmin = user?.role === "admin";
   const canUsePricingAssistant = user?.role === "admin" || user?.role === "estimator";
 
@@ -41,6 +47,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     ...(canUsePricingAssistant ? [{ href: "/pricing", label: "Pricing Assistant", icon: MessageSquare }] : []),
     ...(canUsePricingAssistant ? [{ href: "/purchase-orders", label: "Purchase Orders", icon: Upload }] : []),
     ...(canUsePricingAssistant ? [{ href: "/pricing-db", label: "Pricing Database", icon: Database }] : []),
+    { href: "/chat", label: "Client Chat", icon: MessageCircle },
     { href: "/inbox", label: "Inbox", icon: Inbox },
     ...(isAdmin ? [{ href: "/admin/users", label: "Team", icon: Users }] : []),
   ];
@@ -108,6 +115,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                   {item.href === "/inbox" && unreadCount > 0 && (
                     <Badge className="ml-auto bg-orange-500/20 text-orange-400 border-0 text-[10px] px-1.5 py-0 min-w-[18px] h-[18px] flex items-center justify-center">
                       {unreadCount}
+                    </Badge>
+                  )}
+                  {item.href === "/chat" && chatUnreadCount > 0 && (
+                    <Badge className="ml-auto bg-orange-500/20 text-orange-400 border-0 text-[10px] px-1.5 py-0 min-w-[18px] h-[18px] flex items-center justify-center">
+                      {chatUnreadCount}
                     </Badge>
                   )}
                 </div>
