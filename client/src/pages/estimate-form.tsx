@@ -90,6 +90,7 @@ export default function EstimateForm() {
   const [markupRate, setMarkupRate] = useState(100);
   const [showContactSuggestions, setShowContactSuggestions] = useState(false);
   const [showMeetings, setShowMeetings] = useState(false);
+  const [selectedMeetingRaw, setSelectedMeetingRaw] = useState<any>(null); // raw calendar event for AI context
 
   // Calendar events
   const { data: calendarEvents = [], isLoading: calendarLoading } = useQuery<any[]>({
@@ -286,6 +287,16 @@ export default function EstimateForm() {
       const body: Record<string, any> = { prompt };
       if (isEditing && params.id) {
         body.estimateId = params.id;
+      }
+      // Include current form data + calendar context for AI cross-checking
+      body.currentFormData = { clientName, clientEmail, clientPhone, projectAddress, city, state, zip };
+      if (selectedMeetingRaw) {
+        body.calendarEvent = {
+          summary: selectedMeetingRaw.summary,
+          location: selectedMeetingRaw.location,
+          description: selectedMeetingRaw.description,
+          attendees: selectedMeetingRaw.attendees,
+        };
       }
       const res = await apiRequest("POST", "/api/ai/generate-estimate", body);
       return res.json();
@@ -846,9 +857,11 @@ export default function EstimateForm() {
                             key={evt.id}
                             type="button"
                             className="w-full text-left px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors border border-transparent hover:border-border"
-                            onClick={() => {
+                            onClick={async () => {
                               const hasData = clientName || clientEmail || clientPhone || projectAddress;
                               if (hasData && !window.confirm("Replace current client info with this meeting's details?")) return;
+
+                              // Quick fill from raw data first
                               const attendee = evt.attendees?.[0];
                               setClientName(attendee?.name || evt.summary || "");
                               setClientEmail(attendee?.email || "");
@@ -856,6 +869,22 @@ export default function EstimateForm() {
                               setProjectAddress(evt.location || "");
                               setShowContactSuggestions(false);
                               setShowMeetings(false);
+                              setSelectedMeetingRaw(evt);
+
+                              // Then run AI parser for better extraction
+                              try {
+                                const res = await apiRequest("POST", "/api/calendar/parse-event", { event: evt });
+                                if (res.ok) {
+                                  const parsed = await res.json();
+                                  if (parsed.clientName) setClientName(parsed.clientName);
+                                  if (parsed.clientEmail) setClientEmail(parsed.clientEmail);
+                                  if (parsed.clientPhone) setClientPhone(parsed.clientPhone);
+                                  if (parsed.projectAddress) setProjectAddress(parsed.projectAddress);
+                                  if (parsed.city) setCity(parsed.city);
+                                  if (parsed.state) setState(parsed.state);
+                                  if (parsed.zip) setZip(parsed.zip);
+                                }
+                              } catch { /* AI parse failed, keep hardcoded fill */ }
                             }}
                           >
                             <div className="flex items-center justify-between">

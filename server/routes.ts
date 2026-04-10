@@ -471,6 +471,48 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/calendar/parse-event — AI extracts client info from calendar event
+  app.post("/api/calendar/parse-event", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { event } = req.body;
+      if (!event) return res.status(400).json({ error: "event is required" });
+
+      const anthropic = new Anthropic();
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 500,
+        messages: [{
+          role: "user",
+          content: `Extract client contact information from this calendar event. The event may contain a client's name, email, phone number, and project address in various formats — in the title, description, location, or attendee list.
+
+Calendar event:
+Title: ${event.summary || ""}
+Location: ${event.location || ""}
+Description: ${event.description || ""}
+Attendees: ${JSON.stringify(event.attendees || [])}
+
+Return ONLY a JSON object with these fields (use empty string if not found):
+{"clientName": "", "clientEmail": "", "clientPhone": "", "projectAddress": "", "city": "", "state": "", "zip": ""}
+
+Rules:
+- Ignore any 1 Degree Construction team emails (david@, thai@, oliver@, 1degree)
+- The client name should be a person's name, not a company or event title
+- If the location looks like a street address, use it as projectAddress and parse city/state/zip
+- Phone numbers can appear anywhere in the description
+- Return ONLY the JSON, no explanation`
+        }],
+      });
+
+      trackUsage("claude_ai", "parse_calendar_event", (req as any).user?.id);
+      const text = response.content[0].type === "text" ? response.content[0].text : "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return res.status(422).json({ error: "Could not parse" });
+      res.json(JSON.parse(jsonMatch[0]));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ─── Contacts / Client Directory ───────────────────────────────────────────
 
   app.get("/api/contacts", requireAuth as any, async (_req: Request, res: Response) => {
@@ -2060,9 +2102,22 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
 
   app.post("/api/ai/generate-estimate", async (req, res) => {
     try {
-      const { prompt, estimateId } = req.body;
+      const { prompt, estimateId, currentFormData, calendarEvent } = req.body;
       if (!prompt || typeof prompt !== "string") {
         return res.status(400).json({ error: "Prompt is required" });
+      }
+
+      // Build calendar cross-check context
+      let calendarContext = "";
+      if (calendarEvent || currentFormData) {
+        calendarContext = "\n\n=== CLIENT INFO CROSS-CHECK ===";
+        if (currentFormData) {
+          calendarContext += `\nForm data entered by user: ${JSON.stringify(currentFormData)}`;
+        }
+        if (calendarEvent) {
+          calendarContext += `\nOriginal calendar event: Title: ${calendarEvent.summary || ""}, Location: ${calendarEvent.location || ""}, Description: ${calendarEvent.description || ""}, Attendees: ${JSON.stringify(calendarEvent.attendees || [])}`;
+        }
+        calendarContext += "\nIMPORTANT: Cross-check the form data against the calendar event. Use the MOST ACCURATE version of client name, email, phone, and address. If the calendar has a full address but the form only has a street, use the calendar's. If the form has a corrected name, prefer the form's. Return the best version in your response.";
       }
 
       const isEditMode = !!estimateId;
@@ -2152,7 +2207,7 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 8192,
-        messages: [{ role: "user", content: finalPrompt }],
+        messages: [{ role: "user", content: finalPrompt + calendarContext }],
         system: systemPrompt,
       });
 
