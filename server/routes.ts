@@ -807,7 +807,15 @@ export async function registerRoutes(
       const limit = parseInt(req.query.limit as string) || 100;
       const emails = await storage.getAllEmails(limit);
       const unreadCount = await storage.getUnreadEmailCount();
-      res.json({ emails, unreadCount });
+
+      // Build estimate lookup for client names
+      const allEstimates = await storage.getEstimates();
+      const estMap: Record<number, { clientName: string; estimateNumber: string }> = {};
+      for (const e of allEstimates) {
+        estMap[e.id] = { clientName: e.clientName, estimateNumber: e.estimateNumber };
+      }
+
+      res.json({ emails, unreadCount, estimates: estMap });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

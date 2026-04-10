@@ -64,7 +64,7 @@ export default function TeamInbox() {
   const [replyText, setReplyText] = useState("");
   const [replyOpen, setReplyOpen] = useState(false);
 
-  const { data, isLoading } = useQuery<{ emails: EmailEntry[]; unreadCount: number }>({
+  const { data, isLoading } = useQuery<{ emails: EmailEntry[]; unreadCount: number; estimates: Record<number, { clientName: string; estimateNumber: string }> }>({
     queryKey: ["/api/inbox"],
     refetchInterval: 60000,
   });
@@ -128,15 +128,19 @@ export default function TeamInbox() {
       groupEmails.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
       const latest = groupEmails[0];
 
-      // Extract client name and estimate number separately
-      let clientName = "Unlinked";
+      // Use estimate lookup for proper client name + estimate number
+      let clientName = "Unlinked Messages";
       let estNumber = "";
       if (key !== "unlinked") {
-        const estMatch = latest.subject.match(/([A-Z0-9]+-[A-Z]+-\d{8}-\d+)/i);
-        estNumber = estMatch ? estMatch[1] : `#${key}`;
-        const inboundClient = groupEmails.find(e => e.fromName && e.direction === "inbound" && e.emailType !== "internal_notification")?.fromName;
-        const outboundTo = groupEmails.find(e => e.direction === "outbound")?.recipientEmail;
-        clientName = inboundClient || outboundTo || `Estimate ${estNumber}`;
+        const estInfo = data?.estimates?.[key as number];
+        if (estInfo) {
+          clientName = estInfo.clientName || "Unknown Client";
+          estNumber = estInfo.estimateNumber;
+        } else {
+          const estMatch = latest.subject.match(/([A-Z0-9]+-[A-Z]+-\d{8}-\d+)/i);
+          estNumber = estMatch ? estMatch[1] : `#${key}`;
+          clientName = `Estimate ${estNumber}`;
+        }
       }
 
       result.push({
