@@ -847,12 +847,13 @@ export default function EstimateForm() {
                             type="button"
                             className="w-full text-left px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors border border-transparent hover:border-border"
                             onClick={() => {
-                              // Auto-fill from meeting
+                              // Auto-fill from meeting — always overwrite
                               const attendee = evt.attendees?.[0];
-                              if (attendee?.name) setClientName(attendee.name);
-                              if (attendee?.email) setClientEmail(attendee.email);
-                              if (evt.phone) setClientPhone(evt.phone);
-                              if (evt.location) setProjectAddress(evt.location);
+                              setClientName(attendee?.name || evt.summary || "");
+                              setClientEmail(attendee?.email || "");
+                              setClientPhone(evt.phone || "");
+                              setProjectAddress(evt.location || "");
+                              setShowContactSuggestions(false);
                               setShowMeetings(false);
                             }}
                           >
