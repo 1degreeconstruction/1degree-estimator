@@ -217,6 +217,11 @@ export async function registerRoutes(
     }
   ));
 
+  // ─── Usage Tracker Helper ───────────────────────────────────────────────
+  async function trackUsage(service: string, action: string, userId?: number, metadata?: string) {
+    db.execute(sql`INSERT INTO usage_stats (service, action, user_id, metadata, created_at) VALUES (${service}, ${action}, ${userId || null}, ${metadata || null}, NOW())`).catch(() => {});
+  }
+
   // ─── Global Error Logger ─────────────────────────────────────────────────
   app.use((req: Request, res: Response, next: NextFunction) => {
     const originalJson = res.json.bind(res);
@@ -1077,6 +1082,7 @@ RULES:
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const response = await anthropic.messages.create({
+      await trackUsage("claude_ai", "generate_estimate", (req as any).user?.id);
         model: "claude-sonnet-4-20250514",
         max_tokens: 1024,
         system: systemPrompt,
@@ -2072,6 +2078,7 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
 
       const anthropic = new Anthropic();
       const message = await anthropic.messages.create({
+      await trackUsage("claude_ai", "ai_request", (req as any).user?.id);
         model: "claude-sonnet-4-20250514",
         max_tokens: 8192,
         messages: [{ role: "user", content: finalPrompt }],
@@ -2163,6 +2170,7 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const message = await anthropic.messages.create({
+      await trackUsage("claude_ai", "ai_request", (req as any).user?.id);
         model: "claude-sonnet-4-20250514",
         max_tokens: 512,
         messages: [{ role: "user", content: prompt }],
@@ -2709,6 +2717,81 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
   });
 
   // ─── Error Log Routes ──────────────────────────────────────────────────────
+
+  // GET /api/admin/usage — usage dashboard stats
+  app.get("/api/admin/usage", requireAuth as any, async (_req: Request, res: Response) => {
+    try {
+      // Overall counts
+      const [estCount] = (await db.execute(sql`SELECT COUNT(*) as c FROM estimates`)).rows;
+      const [emailOutCount] = (await db.execute(sql`SELECT COUNT(*) as c FROM email_logs WHERE direction = 'outbound'`)).rows;
+      const [emailInCount] = (await db.execute(sql`SELECT COUNT(*) as c FROM email_logs WHERE direction = 'inbound'`)).rows;
+      const [contactCount] = (await db.execute(sql`SELECT COUNT(*) as c FROM contacts`)).rows;
+      const [pricingCount] = (await db.execute(sql`SELECT COUNT(*) as c FROM pricing_history`)).rows;
+      const [poCount] = (await db.execute(sql`SELECT COUNT(*) as c FROM purchase_orders`)).rows;
+      const [msgCount] = (await db.execute(sql`SELECT COUNT(*) as c FROM estimate_messages`)).rows;
+      const [errCount] = (await db.execute(sql`SELECT COUNT(*) as c FROM error_log`)).rows;
+      const [userCount] = (await db.execute(sql`SELECT COUNT(*) as c FROM users`)).rows;
+
+      // Usage by service (last 30 days)
+      const usageByService = (await db.execute(sql`
+        SELECT service, action, COUNT(*) as count
+        FROM usage_stats WHERE created_at > NOW() - INTERVAL '30 days'
+        GROUP BY service, action ORDER BY count DESC
+      `)).rows;
+
+      // Gmail sends today
+      const [gmailToday] = (await db.execute(sql`
+        SELECT COUNT(*) as c FROM email_logs WHERE direction = 'outbound' AND sent_at > CURRENT_DATE
+      `)).rows;
+
+      // AI calls today
+      const [aiToday] = (await db.execute(sql`
+        SELECT COUNT(*) as c FROM usage_stats WHERE service = 'claude_ai' AND created_at > CURRENT_DATE
+      `)).rows;
+
+      // Recent errors (last 10)
+      const recentErrors = (await db.execute(sql`
+        SELECT id, route, method, status, LEFT(error_message, 200) as error_message, user_id, created_at
+        FROM error_log ORDER BY created_at DESC LIMIT 10
+      `)).rows;
+
+      // Recent activity (last 20)
+      const recentActivity = (await db.execute(sql`
+        SELECT id, estimate_id, user_id, action, details, timestamp
+        FROM activity_log ORDER BY timestamp DESC LIMIT 20
+      `)).rows;
+
+      res.json({
+        totals: {
+          estimates: Number((estCount as any).c),
+          emailsSent: Number((emailOutCount as any).c),
+          emailsReceived: Number((emailInCount as any).c),
+          contacts: Number((contactCount as any).c),
+          pricingEntries: Number((pricingCount as any).c),
+          purchaseOrders: Number((poCount as any).c),
+          chatMessages: Number((msgCount as any).c),
+          errors: Number((errCount as any).c),
+          users: Number((userCount as any).c),
+        },
+        today: {
+          gmailSends: Number((gmailToday as any).c),
+          aiCalls: Number((aiToday as any).c),
+        },
+        limits: {
+          gmail: { daily: 500, label: "Gmail API (per user)" },
+          claude: { daily: "pay-per-use", label: "Claude AI (Anthropic)" },
+          supabase: { storage: "1GB", rows: "500MB", label: "Supabase Free Tier" },
+          render: { hours: "750/mo", label: "Render Free Tier" },
+          vercel: { deploys: "unlimited", label: "Vercel Free Tier" },
+        },
+        usageByService,
+        recentErrors,
+        recentActivity,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // GET /api/admin/errors — view recent errors
   app.get("/api/admin/errors", requireAdmin as any, async (req: Request, res: Response) => {

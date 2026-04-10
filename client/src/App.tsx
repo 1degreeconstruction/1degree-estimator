@@ -22,6 +22,7 @@ import TeamInbox from "@/pages/team-inbox";
 import TeamChat from "@/pages/team-chat";
 import ErrorLog from "@/pages/error-log";
 import ClientDirectory from "@/pages/client-directory";
+import UsageDashboard from "@/pages/usage-dashboard";
 import { useAuth } from "@/hooks/use-auth";
 import { setToken } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -133,6 +134,13 @@ function AppRouter() {
         {() => (
           <AuthGuard>
             <TeamInbox />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/admin/usage">
+        {() => (
+          <AuthGuard>
+            <UsageDashboard />
           </AuthGuard>
         )}
       </Route>
