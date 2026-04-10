@@ -132,7 +132,7 @@ export default function TeamInbox() {
       let clientName = "Unlinked Messages";
       let estNumber = "";
       if (key !== "unlinked") {
-        const estInfo = data?.estimates?.[key as number];
+        const estInfo = data?.estimates?.[String(key)];
         if (estInfo) {
           clientName = estInfo.clientName || "Unknown Client";
           estNumber = estInfo.estimateNumber;
