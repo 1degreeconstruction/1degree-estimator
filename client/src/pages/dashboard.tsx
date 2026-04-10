@@ -148,8 +148,26 @@ export default function Dashboard() {
             </p>
           </div>
         ) : (
-          <div className="space-y-2" data-testid="estimate-list">
-            {filtered.map(estimate => (
+          <div className="space-y-6" data-testid="estimate-list">
+            {(() => {
+              // Group by day
+              const groups: Record<string, typeof filtered> = {};
+              for (const est of filtered) {
+                const d = new Date(est.createdAt);
+                const today = new Date();
+                const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+                let label: string;
+                if (d.toDateString() === today.toDateString()) label = "Today";
+                else if (d.toDateString() === yesterday.toDateString()) label = "Yesterday";
+                else label = d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+                if (!groups[label]) groups[label] = [];
+                groups[label].push(est);
+              }
+              return Object.entries(groups).map(([day, ests]) => (
+                <div key={day}>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">{day}</h3>
+                  <div className="space-y-2">
+                    {ests.map(estimate => (
               <Link key={estimate.id} href={`/estimates/${estimate.id}`}>
                 <div
                   className="border rounded-lg p-4 hover:bg-muted/50 transition-colors cursor-pointer group"
@@ -207,6 +225,10 @@ export default function Dashboard() {
                 </div>
               </Link>
             ))}
+                  </div>
+                </div>
+              ));
+            })()}
           </div>
         )}
       </div>

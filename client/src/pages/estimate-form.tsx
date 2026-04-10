@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2, MessageSquare, Layers, Link, Upload, Search, FileText, CheckCircle2, Clock, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Save, Send, ArrowUp, ArrowDown, Sparkles, ChevronDown, ChevronUp, Loader2, MessageSquare, Layers, Link, Upload, Search, FileText, CheckCircle2, Clock, AlertCircle, Calendar as CalendarIcon } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -89,6 +89,13 @@ export default function EstimateForm() {
   const [permitRequired, setPermitRequired] = useState(false);
   const [markupRate, setMarkupRate] = useState(100);
   const [showContactSuggestions, setShowContactSuggestions] = useState(false);
+  const [showMeetings, setShowMeetings] = useState(false);
+
+  // Calendar events
+  const { data: calendarEvents = [], isLoading: calendarLoading } = useQuery<any[]>({
+    queryKey: ["/api/calendar/recent"],
+    enabled: showMeetings,
+  });
 
   // Contact autocomplete
   interface ContactSuggestion { id: number; name: string; email: string | null; phone: string | null; address: string | null; city: string | null; state: string | null; zip: string | null; }
@@ -810,6 +817,63 @@ export default function EstimateForm() {
                   </CollapsibleContent>
                 </Card>
               </Collapsible>
+            )}
+
+            {/* Recent Meetings Picker */}
+            {!isEditing && (
+              <Card data-testid="section-calendar">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <CalendarIcon className="w-4 h-4 text-orange-400" />
+                      From Recent Meeting
+                    </CardTitle>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowMeetings(p => !p)}>
+                      {showMeetings ? "Hide" : "Show Meetings"}
+                    </Button>
+                  </div>
+                </CardHeader>
+                {showMeetings && (
+                  <CardContent className="pt-0">
+                    {calendarLoading ? (
+                      <p className="text-xs text-muted-foreground">Loading calendar...</p>
+                    ) : calendarEvents.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No recent meetings found. You may need to sign out and back in to grant calendar access.</p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {calendarEvents.map((evt: any) => (
+                          <button
+                            key={evt.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors border border-transparent hover:border-border"
+                            onClick={() => {
+                              // Auto-fill from meeting
+                              const attendee = evt.attendees?.[0];
+                              if (attendee?.name) setClientName(attendee.name);
+                              if (attendee?.email) setClientEmail(attendee.email);
+                              if (evt.phone) setClientPhone(evt.phone);
+                              if (evt.location) setProjectAddress(evt.location);
+                              setShowMeetings(false);
+                            }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium truncate">{evt.summary}</span>
+                              <span className="text-[10px] text-muted-foreground shrink-0 ml-2">
+                                {new Date(evt.start).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                              {evt.attendees?.[0]?.name && <span>{evt.attendees[0].name}</span>}
+                              {evt.attendees?.[0]?.email && <span>{evt.attendees[0].email}</span>}
+                              {evt.location && <span className="truncate">{evt.location}</span>}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                )}
+              </Card>
             )}
 
             {/* Client Info */}

@@ -240,7 +240,7 @@ export async function registerRoutes(
   // --- Auth Routes ---
 
   app.get("/auth/google", passport.authenticate("google", {
-    scope: ["profile", "email", "https://www.googleapis.com/auth/gmail.send"],
+    scope: ["profile", "email", "https://www.googleapis.com/auth/gmail.send", "https://www.googleapis.com/auth/calendar.readonly"],
     accessType: "offline",
     prompt: "consent",
     session: false,
@@ -402,6 +402,70 @@ export async function registerRoutes(
         lineItems: clientItems,
         milestones,
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Google Calendar ────────────────────────────────────────────────────
+
+  app.get("/api/calendar/recent", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user as User;
+      if (!user.googleAccessToken) return res.status(403).json({ error: "No Google token. Sign out and back in." });
+
+      const { OAuth2Client } = await import("google-auth-library");
+      const client = new OAuth2Client(
+        process.env.GOOGLE_CLIENT_ID || "124225853613-okfnb5gconblb1bhtr4tnloj3n4d77m8.apps.googleusercontent.com",
+        process.env.GOOGLE_CLIENT_SECRET || "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"
+      );
+      client.setCredentials({ access_token: user.googleAccessToken, refresh_token: user.googleRefreshToken || undefined });
+
+      const { token } = await client.getAccessToken();
+      const days = parseInt(req.query.days as string) || 7;
+      const timeMin = new Date(Date.now() - days * 86400000).toISOString();
+      const timeMax = new Date().toISOString();
+
+      const calRes = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=30`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (!calRes.ok) {
+        const body = await calRes.text();
+        return res.status(calRes.status).json({ error: `Calendar API ${calRes.status}: ${body.slice(0, 200)}` });
+      }
+
+      const calData = await calRes.json();
+      const events = (calData.items || []).map((e: any) => {
+        // Extract useful info from event
+        const attendees = (e.attendees || []).filter((a: any) => !a.self).map((a: any) => ({
+          name: a.displayName || "",
+          email: a.email || "",
+        }));
+
+        // Try to extract address from location
+        const location = e.location || "";
+
+        // Try to extract phone from description
+        const desc = e.description || "";
+        const phoneMatch = desc.match(/(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/);
+
+        return {
+          id: e.id,
+          summary: e.summary || "(No title)",
+          start: e.start?.dateTime || e.start?.date,
+          end: e.end?.dateTime || e.end?.date,
+          location,
+          description: desc.slice(0, 500),
+          attendees,
+          phone: phoneMatch ? phoneMatch[1] : null,
+        };
+      });
+
+      // Most recent first
+      events.reverse();
+      res.json(events);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
