@@ -31,6 +31,7 @@ interface EmailEntry {
 interface EstimateGroup {
   estimateId: number | null;
   label: string;
+  estNumber: string;
   latestDate: string;
   emails: EmailEntry[];
   unreadCount: number;
@@ -127,24 +128,21 @@ export default function TeamInbox() {
       groupEmails.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
       const latest = groupEmails[0];
 
-      // Build label from the most recent email's subject (strip prefixes)
-      let label = "Unlinked Messages";
+      // Extract client name and estimate number separately
+      let clientName = "Unlinked";
+      let estNumber = "";
       if (key !== "unlinked") {
-        // Try to extract estimate number from subject
         const estMatch = latest.subject.match(/([A-Z0-9]+-[A-Z]+-\d{8}-\d+)/i);
-        if (estMatch) {
-          label = estMatch[1];
-        } else {
-          label = `Estimate #${key}`;
-        }
-        // Add client name if available
-        const clientName = groupEmails.find(e => e.fromName && e.direction === "inbound" && e.emailType !== "internal_notification")?.fromName;
-        if (clientName) label = `${clientName} - ${label}`;
+        estNumber = estMatch ? estMatch[1] : `#${key}`;
+        const inboundClient = groupEmails.find(e => e.fromName && e.direction === "inbound" && e.emailType !== "internal_notification")?.fromName;
+        const outboundTo = groupEmails.find(e => e.direction === "outbound")?.recipientEmail;
+        clientName = inboundClient || outboundTo || `Estimate ${estNumber}`;
       }
 
       result.push({
         estimateId: key === "unlinked" ? null : key as number,
-        label,
+        label: clientName,
+        estNumber,
         latestDate: latest.sentAt,
         emails: groupEmails,
         unreadCount: groupEmails.filter(e => !e.isRead && (e.direction === "inbound")).length,
@@ -217,24 +215,30 @@ export default function TeamInbox() {
                         isExpanded ? "bg-zinc-800/50" : ""
                       } ${group.unreadCount > 0 ? "border-l-2 border-l-orange-500" : ""}`}
                     >
-                      <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0">
                           {isExpanded ? <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" /> : <ChevronRight className="w-3 h-3 text-zinc-500 shrink-0" />}
-                          <span className={`text-xs font-medium truncate ${group.unreadCount > 0 ? "text-white" : "text-zinc-300"}`}>
-                            {group.label}
-                          </span>
+                          <div className="min-w-0">
+                            <div className={`text-sm font-medium truncate ${group.unreadCount > 0 ? "text-white" : "text-zinc-300"}`}>
+                              {group.label}
+                            </div>
+                            {group.estNumber && (
+                              <div className="text-[11px] text-zinc-500 truncate">{group.estNumber}</div>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {group.unreadCount > 0 && (
-                            <Badge className="bg-orange-500 text-white border-0 text-[10px] px-1.5 py-0 h-4">{group.unreadCount}</Badge>
-                          )}
-                          <span className="text-[10px] text-zinc-600">{timeSince(group.latestDate)}</span>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0">
+                          <div className="flex items-center gap-1.5">
+                            {group.unreadCount > 0 && (
+                              <Badge className="bg-orange-500 text-white border-0 text-[10px] px-1.5 py-0 h-4">{group.unreadCount}</Badge>
+                            )}
+                            <span className="text-[10px] text-zinc-600">{timeSince(group.latestDate)}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className={`${latestType.color}`}>{latestType.icon}</span>
+                            <span className="text-[10px] text-zinc-600">{group.emails.length}</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 pl-5">
-                        <span className={`${latestType.color}`}>{latestType.icon}</span>
-                        <span className="text-[11px] text-zinc-500 truncate">{latestType.label}</span>
-                        <span className="text-[10px] text-zinc-600">({group.emails.length})</span>
                       </div>
                     </button>
 
