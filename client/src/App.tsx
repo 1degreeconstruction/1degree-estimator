@@ -21,6 +21,7 @@ import PricingDashboard from "@/pages/pricing-dashboard";
 import TeamInbox from "@/pages/team-inbox";
 import TeamChat from "@/pages/team-chat";
 import ErrorLog from "@/pages/error-log";
+import ClientDirectory from "@/pages/client-directory";
 import { useAuth } from "@/hooks/use-auth";
 import { setToken } from "@/lib/auth";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -111,6 +112,13 @@ function AppRouter() {
         {() => (
           <AuthGuard>
             <PricingDashboard />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/clients">
+        {() => (
+          <AuthGuard>
+            <ClientDirectory />
           </AuthGuard>
         )}
       </Route>

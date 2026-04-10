@@ -88,6 +88,14 @@ export default function EstimateForm() {
   const [notesInternal, setNotesInternal] = useState("");
   const [permitRequired, setPermitRequired] = useState(false);
   const [markupRate, setMarkupRate] = useState(100);
+  const [showContactSuggestions, setShowContactSuggestions] = useState(false);
+
+  // Contact autocomplete
+  interface ContactSuggestion { id: number; name: string; email: string | null; phone: string | null; address: string | null; city: string | null; state: string | null; zip: string | null; }
+  const { data: allContacts = [] } = useQuery<ContactSuggestion[]>({ queryKey: ["/api/contacts"] });
+  const contactSuggestions = clientName.length >= 1
+    ? allContacts.filter(c => c.name.toLowerCase().includes(clientName.toLowerCase())).slice(0, 6)
+    : [];
   const [items, setItems] = useState<LineItemForm[]>([]);
   const [milestones, setMilestones] = useState<MilestoneForm[]>([]);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -811,9 +819,41 @@ export default function EstimateForm() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
+                  <div className="relative">
                     <Label htmlFor="clientName">Client Name</Label>
-                    <Input id="clientName" value={clientName} onChange={e => setClientName(e.target.value)} placeholder="John Smith" data-testid="input-client-name" />
+                    <Input
+                      id="clientName"
+                      value={clientName}
+                      onChange={e => { setClientName(e.target.value); setShowContactSuggestions(true); }}
+                      onFocus={() => clientName.length >= 1 && setShowContactSuggestions(true)}
+                      placeholder="John Smith"
+                      autoComplete="off"
+                      data-testid="input-client-name"
+                    />
+                    {showContactSuggestions && clientName.length >= 1 && contactSuggestions.length > 0 && (
+                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                        {contactSuggestions.map(c => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
+                            onClick={() => {
+                              setClientName(c.name);
+                              if (c.email) setClientEmail(c.email);
+                              if (c.phone) setClientPhone(c.phone);
+                              if (c.address) setProjectAddress(c.address);
+                              if (c.city) setCity(c.city);
+                              if (c.state) setState(c.state);
+                              if (c.zip) setZip(c.zip);
+                              setShowContactSuggestions(false);
+                            }}
+                          >
+                            <div className="font-medium">{c.name}</div>
+                            {c.email && <div className="text-xs text-muted-foreground">{c.email}</div>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="clientEmail">Email</Label>

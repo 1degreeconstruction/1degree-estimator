@@ -11,6 +11,7 @@ import {
   type EstimatePurchaseOrderLink, estimatePurchaseOrderLinks,
   type EmailLog, type InsertEmailLog, emailLogs,
   type EstimateMessage, type InsertEstimateMessage, estimateMessages,
+  type Contact, type InsertContact, contacts,
   teamConfig, activityLog,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -102,6 +103,15 @@ export interface IStorage {
   // Activity Log
   logActivity(entry: { estimateId?: number; userId?: number; action: string; details?: string; metadata?: any }): Promise<void>;
   getActivityFeed(estimateId?: number, limit?: number): Promise<any[]>;
+
+  // Contacts
+  getContacts(): Promise<Contact[]>;
+  getContact(id: number): Promise<Contact | undefined>;
+  createContact(contact: InsertContact): Promise<Contact>;
+  updateContact(id: number, updates: Partial<Contact>): Promise<Contact | undefined>;
+  deleteContact(id: number): Promise<void>;
+  searchContacts(query: string): Promise<Contact[]>;
+  getEstimatesForContact(contactName: string, contactEmail?: string): Promise<Estimate[]>;
 
   // Estimate Messages
   createMessage(msg: InsertEstimateMessage): Promise<EstimateMessage>;
@@ -474,6 +484,48 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(activityLog)
       .orderBy(desc(activityLog.timestamp))
       .limit(limit);
+  }
+
+  // Contacts
+  async getContacts(): Promise<Contact[]> {
+    return db.select().from(contacts).orderBy(contacts.name);
+  }
+
+  async getContact(id: number): Promise<Contact | undefined> {
+    return db.select().from(contacts).where(eq(contacts.id, id)).limit(1).then(r => r[0]);
+  }
+
+  async createContact(contact: InsertContact): Promise<Contact> {
+    const rows = await db.insert(contacts).values(contact).returning();
+    return rows[0];
+  }
+
+  async updateContact(id: number, updates: Partial<Contact>): Promise<Contact | undefined> {
+    const rows = await db.update(contacts).set(updates).where(eq(contacts.id, id)).returning();
+    return rows[0];
+  }
+
+  async deleteContact(id: number): Promise<void> {
+    await db.delete(contacts).where(eq(contacts.id, id));
+  }
+
+  async searchContacts(query: string): Promise<Contact[]> {
+    const all = await this.getContacts();
+    const q = query.toLowerCase();
+    return all.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      (c.email || "").toLowerCase().includes(q) ||
+      (c.phone || "").toLowerCase().includes(q) ||
+      (c.address || "").toLowerCase().includes(q)
+    );
+  }
+
+  async getEstimatesForContact(contactName: string, contactEmail?: string): Promise<Estimate[]> {
+    const all = await this.getEstimates();
+    return all.filter(e =>
+      e.clientName.toLowerCase() === contactName.toLowerCase() ||
+      (contactEmail && e.clientEmail?.toLowerCase() === contactEmail.toLowerCase())
+    );
   }
 
   // Estimate Messages

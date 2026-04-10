@@ -402,6 +402,52 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Contacts / Client Directory ───────────────────────────────────────────
+
+  app.get("/api/contacts", requireAuth as any, async (_req: Request, res: Response) => {
+    try { res.json(await storage.getContacts()); }
+    catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get("/api/contacts/search", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const q = (req.query.q as string) || "";
+      res.json(await storage.searchContacts(q));
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.get("/api/contacts/:id", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const contact = await storage.getContact(parseInt(req.params.id));
+      if (!contact) return res.status(404).json({ error: "Contact not found" });
+      const estimates = await storage.getEstimatesForContact(contact.name, contact.email || undefined);
+      res.json({ contact, estimates });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/contacts", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user as User;
+      const contact = await storage.createContact({ ...req.body, createdByUserId: user.id, createdAt: new Date() });
+      res.json(contact);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/contacts/:id", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const contact = await storage.updateContact(parseInt(req.params.id), req.body);
+      if (!contact) return res.status(404).json({ error: "Not found" });
+      res.json(contact);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete("/api/contacts/:id", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteContact(parseInt(req.params.id));
+      res.json({ ok: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
   // DELETE /api/estimates/:id — delete an estimate and all related data
   app.delete("/api/estimates/:id", requireAuth as any, async (req: Request, res: Response) => {
     try {
@@ -1251,6 +1297,24 @@ RULES:
         }
         if (breakdownEntries.length > 0) {
           await storage.logPricing(breakdownEntries).catch(() => {});
+        }
+      }
+
+      // Auto-save client to contacts directory
+      if (estimateData.clientName) {
+        const existing = await storage.searchContacts(estimateData.clientName);
+        if (!existing.find(c => c.name.toLowerCase() === estimateData.clientName.toLowerCase())) {
+          await storage.createContact({
+            name: estimateData.clientName,
+            email: estimateData.clientEmail || null,
+            phone: estimateData.clientPhone || null,
+            address: estimateData.projectAddress || null,
+            city: estimateData.city || null,
+            state: estimateData.state || null,
+            zip: estimateData.zip || null,
+            createdByUserId: currentUserId,
+            createdAt: new Date(),
+          }).catch(() => {});
         }
       }
 
