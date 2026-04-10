@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { AdminLayout } from "@/components/admin-layout";
@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import {
   Mail, MailOpen, RefreshCw, Send, ExternalLink,
-  Wifi, WifiOff, CheckCircle, Eye, FileText, MessageSquare,
+  Wifi, WifiOff, CheckCircle, Eye, FileText, MessageSquare, ChevronRight, ChevronDown,
 } from "lucide-react";
 
 interface EmailEntry {
@@ -28,12 +28,20 @@ interface EmailEntry {
   gmailThreadId: string | null;
 }
 
-const TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string }> = {
-  estimate:               { icon: <FileText className="w-3.5 h-3.5" />, color: "text-blue-400" },
-  follow_up_1:            { icon: <Send className="w-3.5 h-3.5" />, color: "text-purple-400" },
-  follow_up_2:            { icon: <Send className="w-3.5 h-3.5" />, color: "text-purple-400" },
-  client_reply:           { icon: <MessageSquare className="w-3.5 h-3.5" />, color: "text-green-400" },
-  internal_notification:  { icon: <CheckCircle className="w-3.5 h-3.5" />, color: "text-amber-400" },
+interface EstimateGroup {
+  estimateId: number | null;
+  label: string;
+  latestDate: string;
+  emails: EmailEntry[];
+  unreadCount: number;
+}
+
+const TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
+  estimate:               { icon: <FileText className="w-3 h-3" />, color: "text-blue-400", label: "Estimate Sent" },
+  follow_up_1:            { icon: <Send className="w-3 h-3" />, color: "text-purple-400", label: "Follow-up" },
+  follow_up_2:            { icon: <Send className="w-3 h-3" />, color: "text-purple-400", label: "Follow-up" },
+  client_reply:           { icon: <MessageSquare className="w-3 h-3" />, color: "text-green-400", label: "Client Reply" },
+  internal_notification:  { icon: <Eye className="w-3 h-3" />, color: "text-amber-400", label: "Notification" },
 };
 
 function timeSince(dateStr: string) {
@@ -50,13 +58,14 @@ function timeSince(dateStr: string) {
 export default function TeamInbox() {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [selected, setSelected] = useState<EmailEntry | null>(null);
+  const [expandedGroup, setExpandedGroup] = useState<number | null | "unlinked">(null);
+  const [selectedEmail, setSelectedEmail] = useState<EmailEntry | null>(null);
   const [replyText, setReplyText] = useState("");
   const [replyOpen, setReplyOpen] = useState(false);
 
   const { data, isLoading } = useQuery<{ emails: EmailEntry[]; unreadCount: number }>({
     queryKey: ["/api/inbox"],
-    refetchInterval: 60000, // auto-refresh every 60s
+    refetchInterval: 60000,
   });
 
   const { data: status } = useQuery<{ connected: boolean; connectedAs: string | null; unreadCount: number }>({
@@ -100,20 +109,64 @@ export default function TeamInbox() {
     onError: (e: any) => toast({ title: "Failed to send", description: e.message, variant: "destructive" }),
   });
 
-  const handleSelect = (email: EmailEntry) => {
-    setSelected(email);
+  const emails = data?.emails ?? [];
+  const unread = data?.unreadCount ?? 0;
+
+  // Group emails by estimateId, sorted by most recent activity
+  const groups: EstimateGroup[] = useMemo(() => {
+    const map = new Map<number | "unlinked", EmailEntry[]>();
+    for (const email of emails) {
+      const key = email.estimateId ?? "unlinked";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(email);
+    }
+
+    const result: EstimateGroup[] = [];
+    for (const [key, groupEmails] of map) {
+      // Sort emails within group by date desc
+      groupEmails.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+      const latest = groupEmails[0];
+
+      // Build label from the most recent email's subject (strip prefixes)
+      let label = "Unlinked Messages";
+      if (key !== "unlinked") {
+        // Try to extract estimate number from subject
+        const estMatch = latest.subject.match(/([A-Z0-9]+-[A-Z]+-\d{8}-\d+)/i);
+        if (estMatch) {
+          label = estMatch[1];
+        } else {
+          label = `Estimate #${key}`;
+        }
+        // Add client name if available
+        const clientName = groupEmails.find(e => e.fromName && e.direction === "inbound" && e.emailType !== "internal_notification")?.fromName;
+        if (clientName) label = `${clientName} - ${label}`;
+      }
+
+      result.push({
+        estimateId: key === "unlinked" ? null : key as number,
+        label,
+        latestDate: latest.sentAt,
+        emails: groupEmails,
+        unreadCount: groupEmails.filter(e => !e.isRead && (e.direction === "inbound")).length,
+      });
+    }
+
+    // Sort by most recent activity
+    result.sort((a, b) => new Date(b.latestDate).getTime() - new Date(a.latestDate).getTime());
+    return result;
+  }, [emails]);
+
+  const handleSelectEmail = (email: EmailEntry) => {
+    setSelectedEmail(email);
     setReplyOpen(false);
     setReplyText("");
     if (!email.isRead) readMutation.mutate(email.id);
   };
 
-  const emails = data?.emails ?? [];
-  const unread = data?.unreadCount ?? 0;
-
   return (
     <AdminLayout>
       <div className="flex h-[calc(100vh-60px)]">
-        {/* Left panel — list */}
+        {/* Left panel — grouped list */}
         <div className="w-96 border-r border-zinc-800 flex flex-col">
           {/* Header */}
           <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
@@ -125,78 +178,102 @@ export default function TeamInbox() {
               )}
             </div>
             <div className="flex items-center gap-1.5">
-              {/* Team Gmail connection status */}
               {status?.connected ? (
                 <div className="flex items-center gap-1 text-xs text-green-400">
                   <Wifi className="w-3 h-3" />
-                  <span className="hidden sm:inline">{status.connectedAs}</span>
                 </div>
               ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => connectMutation.mutate()}
-                  disabled={connectMutation.isPending}
-                >
-                  <WifiOff className="w-3 h-3 mr-1" />
-                  Connect inbox
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => connectMutation.mutate()} disabled={connectMutation.isPending}>
+                  <WifiOff className="w-3 h-3 mr-1" /> Connect
                 </Button>
               )}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 w-7 p-0"
-                onClick={() => pollMutation.mutate()}
-                disabled={pollMutation.isPending || !status?.connected}
-                title="Check for new replies"
-              >
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => pollMutation.mutate()} disabled={pollMutation.isPending || !status?.connected}>
                 <RefreshCw className={`w-3.5 h-3.5 ${pollMutation.isPending ? "animate-spin" : ""}`} />
               </Button>
             </div>
           </div>
 
-          {/* Email list */}
+          {/* Grouped email list */}
           <div className="flex-1 overflow-y-auto">
             {isLoading ? (
               <div className="p-4 text-sm text-zinc-500">Loading...</div>
-            ) : emails.length === 0 ? (
+            ) : groups.length === 0 ? (
               <div className="p-6 text-sm text-zinc-500 text-center">
-                No messages yet.<br />
-                Send your first estimate to a client to get started.
+                No messages yet.<br />Send your first estimate to get started.
               </div>
             ) : (
-              emails.map(email => {
-                const cfg = TYPE_CONFIG[email.emailType] || TYPE_CONFIG.estimate;
-                const isInbound = email.direction === "inbound";
-                const isActive = selected?.id === email.id;
+              groups.map(group => {
+                const key = group.estimateId ?? "unlinked";
+                const isExpanded = expandedGroup === key;
+                const latestEmail = group.emails[0];
+                const latestType = TYPE_CONFIG[latestEmail.emailType] || TYPE_CONFIG.estimate;
+
                 return (
-                  <button
-                    key={email.id}
-                    onClick={() => handleSelect(email)}
-                    className={`w-full text-left px-4 py-3 border-b border-zinc-800/50 hover:bg-zinc-800/40 transition-colors ${
-                      isActive ? "bg-zinc-800/60" : ""
-                    } ${!email.isRead && isInbound ? "border-l-2 border-l-orange-500" : ""}`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {/* Direction icon */}
-                      <div className={`mt-0.5 flex-shrink-0 ${cfg.color}`}>{cfg.icon}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <span className={`text-xs font-medium truncate ${!email.isRead && isInbound ? "text-white" : "text-zinc-300"}`}>
-                            {isInbound ? (email.fromName || email.fromEmail || "Client") : `To: ${email.recipientEmail}`}
+                  <div key={String(key)}>
+                    {/* Group header */}
+                    <button
+                      onClick={() => setExpandedGroup(isExpanded ? null : key)}
+                      className={`w-full text-left px-4 py-3 border-b border-zinc-800/50 hover:bg-zinc-800/40 transition-colors ${
+                        isExpanded ? "bg-zinc-800/50" : ""
+                      } ${group.unreadCount > 0 ? "border-l-2 border-l-orange-500" : ""}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {isExpanded ? <ChevronDown className="w-3 h-3 text-zinc-500 shrink-0" /> : <ChevronRight className="w-3 h-3 text-zinc-500 shrink-0" />}
+                          <span className={`text-xs font-medium truncate ${group.unreadCount > 0 ? "text-white" : "text-zinc-300"}`}>
+                            {group.label}
                           </span>
-                          <span className="text-[10px] text-zinc-600 flex-shrink-0">{timeSince(email.sentAt)}</span>
                         </div>
-                        <div className={`text-xs truncate mb-0.5 ${!email.isRead && isInbound ? "text-zinc-200 font-medium" : "text-zinc-400"}`}>
-                          {email.subject}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {group.unreadCount > 0 && (
+                            <Badge className="bg-orange-500 text-white border-0 text-[10px] px-1.5 py-0 h-4">{group.unreadCount}</Badge>
+                          )}
+                          <span className="text-[10px] text-zinc-600">{timeSince(group.latestDate)}</span>
                         </div>
-                        {email.bodyPreview && (
-                          <div className="text-[11px] text-zinc-600 truncate">{email.bodyPreview}</div>
+                      </div>
+                      <div className="flex items-center gap-1.5 pl-5">
+                        <span className={`${latestType.color}`}>{latestType.icon}</span>
+                        <span className="text-[11px] text-zinc-500 truncate">{latestType.label}</span>
+                        <span className="text-[10px] text-zinc-600">({group.emails.length})</span>
+                      </div>
+                    </button>
+
+                    {/* Expanded: individual emails */}
+                    {isExpanded && (
+                      <div className="bg-zinc-900/30">
+                        {group.emails.map(email => {
+                          const cfg = TYPE_CONFIG[email.emailType] || TYPE_CONFIG.estimate;
+                          const isInbound = email.direction === "inbound";
+                          const isActive = selectedEmail?.id === email.id;
+                          return (
+                            <button
+                              key={email.id}
+                              onClick={() => handleSelectEmail(email)}
+                              className={`w-full text-left pl-8 pr-4 py-2.5 border-b border-zinc-800/30 hover:bg-zinc-800/40 transition-colors ${
+                                isActive ? "bg-zinc-800/60" : ""
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className={cfg.color}>{cfg.icon}</span>
+                                <span className={`text-xs truncate flex-1 ${!email.isRead && isInbound ? "text-white font-medium" : "text-zinc-400"}`}>
+                                  {isInbound ? (email.fromName || email.fromEmail || "Client") : `Sent to ${email.recipientEmail}`}
+                                </span>
+                                <span className="text-[10px] text-zinc-600 shrink-0">{timeSince(email.sentAt)}</span>
+                              </div>
+                              <p className="text-[11px] text-zinc-600 truncate pl-5 mt-0.5">{email.subject}</p>
+                            </button>
+                          );
+                        })}
+                        {group.estimateId && (
+                          <Link href={`/estimates/${group.estimateId}`}>
+                            <div className="pl-8 pr-4 py-2 text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1 cursor-pointer">
+                              <ExternalLink className="w-3 h-3" /> Open Estimate
+                            </div>
+                          </Link>
                         )}
                       </div>
-                    </div>
-                  </button>
+                    )}
+                  </div>
                 );
               })
             )}
@@ -205,7 +282,7 @@ export default function TeamInbox() {
 
         {/* Right panel — detail */}
         <div className="flex-1 flex flex-col">
-          {!selected ? (
+          {!selectedEmail ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center text-zinc-600">
                 <MailOpen className="w-8 h-8 mx-auto mb-2 opacity-30" />
@@ -218,31 +295,25 @@ export default function TeamInbox() {
               <div className="px-6 py-4 border-b border-zinc-800">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h2 className="text-sm font-semibold text-white mb-1">{selected.subject}</h2>
+                    <h2 className="text-sm font-semibold text-white mb-1">{selectedEmail.subject}</h2>
                     <p className="text-xs text-zinc-500">
-                      {selected.direction === "inbound"
-                        ? `From: ${selected.fromName || selected.fromEmail}`
-                        : `To: ${selected.recipientEmail}`}
-                      {" · "}{new Date(selected.sentAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+                      {selectedEmail.direction === "inbound"
+                        ? `From: ${selectedEmail.fromName || selectedEmail.fromEmail}`
+                        : `To: ${selectedEmail.recipientEmail}`}
+                      {" · "}{new Date(selectedEmail.sentAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {selected.estimateId && (
-                      <Link href={`/estimates/${selected.estimateId}`}>
+                    {selectedEmail.estimateId && (
+                      <Link href={`/estimates/${selectedEmail.estimateId}`}>
                         <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                          <ExternalLink className="w-3 h-3" />
-                          Estimate
+                          <ExternalLink className="w-3 h-3" /> Estimate
                         </Button>
                       </Link>
                     )}
-                    {selected.estimateId && (
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
-                        onClick={() => setReplyOpen(r => !r)}
-                      >
-                        <Send className="w-3 h-3 mr-1" />
-                        Reply
+                    {selectedEmail.estimateId && (
+                      <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700" onClick={() => setReplyOpen(r => !r)}>
+                        <Send className="w-3 h-3 mr-1" /> Reply
                       </Button>
                     )}
                   </div>
@@ -250,44 +321,38 @@ export default function TeamInbox() {
               </div>
 
               {/* Reply composer */}
-              {replyOpen && selected.estimateId && (
+              {replyOpen && selectedEmail.estimateId && (
                 <div className="px-6 py-3 border-b border-zinc-800 bg-zinc-900/50">
                   <Textarea
                     placeholder="Type your reply..."
                     value={replyText}
                     onChange={e => setReplyText(e.target.value)}
                     className="mb-2 min-h-[80px] text-sm"
-                    data-testid="input-reply-text"
                   />
                   <div className="flex items-center gap-2">
                     <Button
-                      size="sm"
-                      className="bg-orange-600 hover:bg-orange-700"
+                      size="sm" className="bg-orange-600 hover:bg-orange-700"
                       disabled={!replyText.trim() || replyMutation.isPending}
                       onClick={() => replyMutation.mutate({
-                        estimateId: selected.estimateId!,
+                        estimateId: selectedEmail.estimateId!,
                         message: replyText,
-                        threadId: selected.gmailThreadId || undefined,
+                        threadId: selectedEmail.gmailThreadId || undefined,
                       })}
-                      data-testid="button-send-reply"
                     >
                       {replyMutation.isPending ? "Sending..." : "Send Reply"}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setReplyOpen(false)}>Cancel</Button>
-                    <span className="text-xs text-zinc-500 ml-auto">Sends from your Gmail account</span>
+                    <span className="text-xs text-zinc-500 ml-auto">Sends from your Gmail</span>
                   </div>
                 </div>
               )}
 
               {/* Message body */}
               <div className="flex-1 overflow-y-auto px-6 py-5">
-                {selected.bodyHtml ? (
-                  <div
-                    className="prose prose-sm prose-invert max-w-none text-zinc-300"
-                    dangerouslySetInnerHTML={{ __html: selected.bodyHtml }}
-                  />
+                {selectedEmail.bodyHtml ? (
+                  <div className="prose prose-sm prose-invert max-w-none text-zinc-300" dangerouslySetInnerHTML={{ __html: selectedEmail.bodyHtml }} />
                 ) : (
-                  <p className="text-sm text-zinc-400 whitespace-pre-wrap">{selected.bodyPreview || "(no content)"}</p>
+                  <p className="text-sm text-zinc-400 whitespace-pre-wrap">{selectedEmail.bodyPreview || "(no content)"}</p>
                 )}
               </div>
             </>
