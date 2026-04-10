@@ -847,7 +847,8 @@ export default function EstimateForm() {
                             type="button"
                             className="w-full text-left px-3 py-2 rounded-md text-sm hover:bg-accent transition-colors border border-transparent hover:border-border"
                             onClick={() => {
-                              // Auto-fill from meeting — always overwrite
+                              const hasData = clientName || clientEmail || clientPhone || projectAddress;
+                              if (hasData && !window.confirm("Replace current client info with this meeting's details?")) return;
                               const attendee = evt.attendees?.[0];
                               setClientName(attendee?.name || evt.summary || "");
                               setClientEmail(attendee?.email || "");
