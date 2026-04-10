@@ -1082,7 +1082,6 @@ RULES:
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const response = await anthropic.messages.create({
-      await trackUsage("claude_ai", "generate_estimate", (req as any).user?.id);
         model: "claude-sonnet-4-20250514",
         max_tokens: 1024,
         system: systemPrompt,
@@ -1095,6 +1094,7 @@ RULES:
         ],
       });
 
+      trackUsage("claude_ai", "pricing_chat", (req as any).user?.id);
       const rawReply = response.content[0].type === "text" ? response.content[0].text : "";
 
       // Parse proposed change if present
@@ -2078,7 +2078,6 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
 
       const anthropic = new Anthropic();
       const message = await anthropic.messages.create({
-      await trackUsage("claude_ai", "ai_request", (req as any).user?.id);
         model: "claude-sonnet-4-20250514",
         max_tokens: 8192,
         messages: [{ role: "user", content: finalPrompt }],
@@ -2090,6 +2089,8 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
       if (!textBlock || textBlock.type !== "text") {
         return res.status(500).json({ error: "No text response from AI" });
       }
+
+      trackUsage("claude_ai", "generate_estimate", (req as any).user?.id);
 
       // Parse the JSON from the response
       const responseText = textBlock.text;
@@ -2170,7 +2171,6 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const message = await anthropic.messages.create({
-      await trackUsage("claude_ai", "ai_request", (req as any).user?.id);
         model: "claude-sonnet-4-20250514",
         max_tokens: 512,
         messages: [{ role: "user", content: prompt }],
@@ -2180,6 +2180,7 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
       if (!textBlock || textBlock.type !== "text") {
         return res.status(500).json({ error: "No text response from AI" });
       }
+      trackUsage("claude_ai", "ai_breakdown", (req as any).user?.id);
 
       // Parse JSON array from response
       const rawText = textBlock.text.trim();
