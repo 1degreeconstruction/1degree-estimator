@@ -43,7 +43,7 @@ export function useAuth() {
     clearToken();
     queryClient.setQueryData(["auth", "me"], null);
     queryClient.invalidateQueries({ queryKey: ["auth"] });
-    window.location.hash = "/login";
+    window.location.hash = "/";
   }
 
   return {
