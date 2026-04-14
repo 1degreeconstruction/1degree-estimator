@@ -636,6 +636,7 @@ export default function EstimateForm() {
 
   // Track which milestones the user has manually edited
   const [userEditedMilestones, setUserEditedMilestones] = useState<Set<string>>(new Set());
+  const [milestonePercentMode, setMilestonePercentMode] = useState<Set<number>>(new Set());
 
   const markMilestoneEdited = (index: number) => {
     const name = milestones[index]?.milestoneName;
@@ -1518,14 +1519,36 @@ export default function EstimateForm() {
                             placeholder="Milestone name"
                             data-testid={`input-milestone-name-${idx}`}
                           />
-                          <Input
-                            type="number"
-                            className="w-32"
-                            value={m.amount || ""}
-                            onChange={e => { markMilestoneEdited(idx); updateMilestone(idx, "amount", parseFloat(e.target.value) || 0); }}
-                            placeholder="0.00"
-                            data-testid={`input-milestone-amount-${idx}`}
-                          />
+                          <div className="flex items-center gap-1">
+                            {milestonePercentMode.has(idx) ? (
+                              <Input
+                                type="number"
+                                className="w-20"
+                                value={calculations.total > 0 ? Math.round(m.amount / calculations.total * 10000) / 100 : ""}
+                                onChange={e => { const pct = parseFloat(e.target.value) || 0; markMilestoneEdited(idx); updateMilestone(idx, "amount", Math.round(calculations.total * pct / 100 * 100) / 100); }}
+                                placeholder="10"
+                                data-testid={`input-milestone-pct-${idx}`}
+                              />
+                            ) : (
+                              <Input
+                                type="number"
+                                className="w-28"
+                                value={m.amount || ""}
+                                onChange={e => { markMilestoneEdited(idx); updateMilestone(idx, "amount", parseFloat(e.target.value) || 0); }}
+                                placeholder="0.00"
+                                data-testid={`input-milestone-amount-${idx}`}
+                              />
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={`h-8 w-8 p-0 text-xs font-mono ${milestonePercentMode.has(idx) ? "text-primary bg-primary/10" : "text-muted-foreground"}`}
+                              onClick={() => setMilestonePercentMode(prev => { const n = new Set(prev); n.has(idx) ? n.delete(idx) : n.add(idx); return n; })}
+                              title="Toggle between $ and %"
+                            >
+                              %
+                            </Button>
+                          </div>
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => { const name = milestones[idx]?.milestoneName; setUserEditedMilestones(prev => { const n = new Set(prev); if (name) n.delete(name); return n; }); removeMilestone(idx); }} data-testid={`remove-milestone-${idx}`}>
                             <Trash2 className="w-3 h-3" />
                           </Button>
