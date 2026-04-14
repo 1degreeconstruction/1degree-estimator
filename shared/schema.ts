@@ -53,6 +53,7 @@ export const estimates = pgTable("estimates", {
   apparentDiscountValue: real("apparent_discount_value"),
   realDiscountType: text("real_discount_type"), // percent | dollar | null
   realDiscountValue: real("real_discount_value"),
+  dayColor: text("day_color"),
 });
 
 export const insertEstimateSchema = createInsertSchema(estimates).omit({ id: true });

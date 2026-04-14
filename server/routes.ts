@@ -331,6 +331,91 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Daily Color System ──────────────────────────────────────────────
+
+  function generateDailyColor(dateStr: string, recentColors: string[]): string {
+    // Generate candidates deterministically from date seed
+    const seed = dateStr.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    const candidates: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      const h = ((seed * 137 + i * 97) % 360);
+      const s = 55 + ((seed * 13 + i * 31) % 30); // 55-85%
+      const l = 45 + ((seed * 7 + i * 19) % 20);  // 45-65%
+      // HSL to hex
+      const hslToHex = (h: number, s: number, l: number) => {
+        s /= 100; l /= 100;
+        const k = (n: number) => (n + h / 30) % 12;
+        const a = s * Math.min(l, 1 - l);
+        const f = (n: number) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+        return `#${[f(0), f(8), f(4)].map(x => x.toString(16).padStart(2, "0")).join("")}`;
+      };
+      candidates.push(hslToHex(h, s, l));
+    }
+
+    // Color distance function (RGB euclidean)
+    const hexToRgb = (hex: string) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+    const colorDist = (a: string, b: string) => {
+      const [r1, g1, b1] = hexToRgb(a);
+      const [r2, g2, b2] = hexToRgb(b);
+      return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
+    };
+
+    // Score each candidate: maximize contrast vs recent colors (yesterday weighted highest)
+    let bestColor = candidates[0];
+    let bestScore = -1;
+    for (const c of candidates) {
+      let score = 0;
+      if (recentColors.length > 0) {
+        score += colorDist(c, recentColors[0]) * 3; // yesterday = 3x weight
+      }
+      for (let i = 1; i < recentColors.length; i++) {
+        score += colorDist(c, recentColors[i]);
+      }
+      // Penalize too-similar to any recent
+      const minDist = recentColors.length > 0 ? Math.min(...recentColors.map(r => colorDist(c, r))) : 999;
+      if (minDist < 80) score -= 500;
+      if (score > bestScore) { bestScore = score; bestColor = c; }
+    }
+    return bestColor;
+  }
+
+  // GET /api/daily-color?date=YYYY-MM-DD (defaults to today)
+  app.get("/api/daily-color", async (req, res) => {
+    try {
+      const dateStr = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+
+      // Check if color already exists — immutable once set
+      const existing = await db.execute(sql`SELECT hex_color FROM daily_colors WHERE date = ${dateStr}`);
+      if (existing.rows.length > 0) {
+        return res.json({ date: dateStr, color: (existing.rows[0] as any).hex_color });
+      }
+
+      // Fetch last 5 days of colors for contrast comparison
+      const recent = await db.execute(sql`SELECT hex_color FROM daily_colors ORDER BY date DESC LIMIT 5`);
+      const recentColors = recent.rows.map((r: any) => r.hex_color);
+
+      // Generate and persist
+      const color = generateDailyColor(dateStr, recentColors);
+      await db.execute(sql`INSERT INTO daily_colors (date, hex_color) VALUES (${dateStr}, ${color}) ON CONFLICT (date) DO NOTHING`);
+
+      res.json({ date: dateStr, color });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/daily-colors?from=YYYY-MM-DD&to=YYYY-MM-DD — batch fetch
+  app.get("/api/daily-colors", async (req, res) => {
+    try {
+      const rows = await db.execute(sql`SELECT date, hex_color FROM daily_colors ORDER BY date DESC LIMIT 60`);
+      const map: Record<string, string> = {};
+      for (const r of rows.rows as any[]) map[r.date] = r.hex_color;
+      res.json(map);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Estimates - list (supports ?mine=true)
   app.get("/api/estimates", async (req, res) => {
     try {
@@ -1504,6 +1589,18 @@ RULES:
 
       const currentUserId = req.user ? (req.user as Express.User).id : null;
 
+      // Get today's color (immutable once generated)
+      const todayStr = now.toISOString().slice(0, 10);
+      let dayColor = "";
+      const existingColor = await db.execute(sql`SELECT hex_color FROM daily_colors WHERE date = ${todayStr}`);
+      if (existingColor.rows.length > 0) {
+        dayColor = (existingColor.rows[0] as any).hex_color;
+      } else {
+        const recentC = await db.execute(sql`SELECT hex_color FROM daily_colors ORDER BY date DESC LIMIT 5`);
+        dayColor = generateDailyColor(todayStr, recentC.rows.map((r: any) => r.hex_color));
+        await db.execute(sql`INSERT INTO daily_colors (date, hex_color) VALUES (${todayStr}, ${dayColor}) ON CONFLICT (date) DO NOTHING`);
+      }
+
       const estimate = await storage.createEstimate({
         orgId: (req as any).orgId || 1,
         estimateNumber,
@@ -1538,6 +1635,7 @@ RULES:
         signatureName: null,
         signatureTimestamp: null,
         createdByUserId: currentUserId,
+        dayColor: dayColor || null,
       });
 
       // Create line items

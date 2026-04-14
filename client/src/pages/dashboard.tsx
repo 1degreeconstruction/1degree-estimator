@@ -43,6 +43,22 @@ export default function Dashboard() {
     },
   });
 
+  // Daily color system
+  const { data: todayColor } = useQuery<{ date: string; color: string }>({
+    queryKey: ["/api/daily-color"],
+    queryFn: async () => { const res = await apiRequest("GET", "/api/daily-color"); return res.json(); },
+  });
+  const { data: colorMap = {} } = useQuery<Record<string, string>>({
+    queryKey: ["/api/daily-colors"],
+    queryFn: async () => { const res = await apiRequest("GET", "/api/daily-colors"); return res.json(); },
+  });
+
+  // Auto contrast: black or white text on a given bg hex
+  const contrastText = (hex: string) => {
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+    return (r * 299 + g * 587 + b * 114) / 1000 > 128 ? "#000000" : "#ffffff";
+  };
+
   const filtered = estimates?.filter(e => {
     if (statusFilter !== "all" && e.status !== statusFilter) return false;
     if (search) {
@@ -71,7 +87,11 @@ export default function Dashboard() {
             </p>
           </div>
           <Link href="/estimates/new">
-            <Button className="gap-2" data-testid="button-new-estimate">
+            <Button
+              className="gap-2 border-0"
+              style={todayColor?.color ? { backgroundColor: todayColor.color, color: contrastText(todayColor.color) } : {}}
+              data-testid="button-new-estimate"
+            >
               <Plus className="w-4 h-4" />
               New Estimate
             </Button>
@@ -152,45 +172,40 @@ export default function Dashboard() {
         ) : (
           <div className="space-y-6" data-testid="estimate-list">
             {(() => {
-              // Group by day
-              const groups: Record<string, typeof filtered> = {};
+              // Group by day (keyed by YYYY-MM-DD for color lookup)
+              const groups: Record<string, { label: string; dateKey: string; estimates: typeof filtered }> = {};
               for (const est of filtered) {
                 const d = new Date(est.createdAt);
                 const today = new Date();
                 const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+                const dateKey = d.toISOString().slice(0, 10);
                 let label: string;
                 if (d.toDateString() === today.toDateString()) label = "Today";
                 else if (d.toDateString() === yesterday.toDateString()) label = "Yesterday";
                 else label = d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
-                if (!groups[label]) groups[label] = [];
-                groups[label].push(est);
+                if (!groups[dateKey]) groups[dateKey] = { label, dateKey, estimates: [] };
+                groups[dateKey].estimates.push(est);
               }
-              const dayColors = [
-                "border-l-orange-500 bg-orange-500/5",
-                "border-l-blue-500 bg-blue-500/5",
-                "border-l-emerald-500 bg-emerald-500/5",
-                "border-l-purple-500 bg-purple-500/5",
-                "border-l-rose-500 bg-rose-500/5",
-                "border-l-cyan-500 bg-cyan-500/5",
-                "border-l-amber-500 bg-amber-500/5",
-              ];
-              const dayDotColors = [
-                "bg-orange-500", "bg-blue-500", "bg-emerald-500", "bg-purple-500",
-                "bg-rose-500", "bg-cyan-500", "bg-amber-500",
-              ];
-              return Object.entries(groups).map(([day, ests], groupIdx) => (
-                <div key={day}>
+              return Object.values(groups).map(({ label, dateKey, estimates: ests }) => {
+                // Use stored color for this day, or fallback to estimate's day_color, or gray
+                const groupColor = colorMap[dateKey] || (ests[0] as any)?.dayColor || "#6b7280";
+                return (
+                <div key={dateKey}>
                   <div className="flex items-center gap-2 mb-3 px-1">
-                    <div className={`w-2 h-2 rounded-full ${dayDotColors[groupIdx % dayDotColors.length]}`} />
-                    <h3 className="text-xs font-bold uppercase tracking-wider">{day}</h3>
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: groupColor }} />
+                    <h3 className="text-xs font-bold uppercase tracking-wider">{label}</h3>
                     <span className="text-[10px] text-muted-foreground">{ests.length} estimate{ests.length !== 1 ? "s" : ""}</span>
-                    <div className="flex-1 border-t border-border/50" />
+                    <div className="flex-1 border-t" style={{ borderColor: groupColor + "40" }} />
                   </div>
                   <div className="space-y-2">
-                    {ests.map(estimate => (
+                    {ests.map(estimate => {
+                      // Per-estimate color: use stored day_color on the estimate, or the group color
+                      const estColor = (estimate as any).dayColor || groupColor;
+                      return (
               <Link key={estimate.id} href={`/estimates/${estimate.id}`}>
                 <div
-                  className={`border rounded-lg p-4 hover:bg-muted/50 transition-colors cursor-pointer group border-l-4 ${dayColors[groupIdx % dayColors.length]}`}
+                  className="border rounded-lg p-4 hover:bg-muted/50 transition-colors cursor-pointer group border-l-4"
+                  style={{ borderLeftColor: estColor, backgroundColor: estColor + "08" }}
                   data-testid={`estimate-card-${estimate.id}`}
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -256,10 +271,12 @@ export default function Dashboard() {
                   </div>
                 </div>
               </Link>
-            ))}
+                      );
+                    })}
                   </div>
                 </div>
-              ));
+                );
+              });
             })()}
           </div>
         )}
