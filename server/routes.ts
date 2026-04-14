@@ -376,26 +376,46 @@ export async function registerRoutes(
       const estimate = await storage.getEstimateByUniqueId(req.params.uniqueId);
       if (!estimate) return res.status(404).json({ error: "Not found" });
 
-      // Log view event — first view changes status, every view logs activity
-      const viewedAt = new Date();
-      if (estimate.status === "sent") {
-        await storage.updateEstimate(estimate.id, { status: "viewed", viewedAt });
+      // Check if this is a team preview (authenticated user) vs real client view
+      let isTeamPreview = false;
+      try {
+        const authHeader = req.headers["authorization"];
+        if (authHeader?.startsWith("Bearer ")) {
+          const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as any;
+          if (payload.userId) isTeamPreview = true;
+        }
+      } catch { /* not authenticated = real client */ }
+
+      if (!isTeamPreview) {
+        // Log view event — first view changes status, every view logs activity
+        const viewedAt = new Date();
+        if (estimate.status === "sent") {
+          await storage.updateEstimate(estimate.id, { status: "viewed", viewedAt });
+        }
+
+        // Capture viewer details
+        const viewerIp = req.headers["x-forwarded-for"] || req.ip || "unknown";
+        const userAgent = req.headers["user-agent"] || "";
+        const referer = req.headers["referer"] || "";
+        const isMobile = /mobile|iphone|android/i.test(userAgent);
+        const browser = userAgent.match(/(Chrome|Firefox|Safari|Edge|Opera)/i)?.[1] || "Unknown";
+        const viewMeta = JSON.stringify({ ip: viewerIp, userAgent: userAgent.slice(0, 200), browser, isMobile, referer: referer.slice(0, 200) });
+
+        await storage.createEvent({ estimateId: estimate.id, eventType: "viewed", timestamp: viewedAt, metadata: viewMeta }).catch(() => {});
+        await storage.logEmail({
+          estimateId: estimate.id,
+          recipientEmail: "team",
+          fromEmail: estimate.clientEmail || "",
+          fromName: estimate.clientName,
+          subject: `\uD83D\uDC40 ${estimate.clientName} viewed estimate ${estimate.estimateNumber}`,
+          bodyPreview: `${estimate.clientName} opened from ${browser}${isMobile ? " (mobile)" : ""} · IP: ${typeof viewerIp === "string" ? viewerIp : (viewerIp as string[])[0]}`,
+          direction: "inbound",
+          emailType: "internal_notification",
+          status: "received",
+          isRead: false,
+          sentAt: viewedAt,
+        }).catch(() => {});
       }
-      // Always log the view (even repeat views)
-      await storage.createEvent({ estimateId: estimate.id, eventType: "viewed", timestamp: viewedAt, metadata: req.ip || null }).catch(() => {});
-      await storage.logEmail({
-        estimateId: estimate.id,
-        recipientEmail: "team",
-        fromEmail: estimate.clientEmail || "",
-        fromName: estimate.clientName,
-        subject: `\uD83D\uDC40 ${estimate.clientName} viewed estimate ${estimate.estimateNumber}`,
-        bodyPreview: `${estimate.clientName} opened the estimate for ${estimate.projectAddress}.`,
-        direction: "inbound",
-        emailType: "internal_notification",
-        status: "received",
-        isRead: false,
-        sentAt: viewedAt,
-      }).catch(() => {});
 
       const [salesRep, items, milestones] = await Promise.all([
         storage.getSalesRep(estimate.salesRepId),
