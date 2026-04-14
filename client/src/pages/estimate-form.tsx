@@ -900,7 +900,9 @@ export default function EstimateForm() {
                         value={aiPrompt}
                         onChange={e => setAiPrompt(e.target.value)}
                         placeholder="Describe the project... e.g., 'Full bathroom remodel at 456 Oak Ave, Encino for Sarah Chen. Demo, new layout, full MEP, tile, paint.'"
-                        rows={3}
+                        className="min-h-[60px] overflow-hidden resize-none"
+                          style={{ height: "auto" }}
+                          onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
                         data-testid="input-ai-prompt"
                       />
                       <Button
@@ -1146,7 +1148,10 @@ export default function EstimateForm() {
                           placeholder="Scope description (client-facing)..."
                           value={item.scopeDescription}
                           onChange={e => updateLineItem(idx, "scopeDescription", e.target.value)}
-                          rows={2}
+                          className="min-h-[60px] overflow-hidden resize-none"
+                          style={{ height: "auto" }}
+                          onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
+                          ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
                           data-testid={`input-scope-${idx}`}
                         />
                         <div className="flex items-center gap-4">
@@ -1347,7 +1352,9 @@ export default function EstimateForm() {
                     value={projectInclusions}
                     onChange={e => setProjectInclusions(e.target.value)}
                     placeholder="• What is specifically included for this project..."
-                    rows={4}
+                    className="min-h-[60px] overflow-hidden resize-none"
+                          style={{ height: "auto" }}
+                          onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
                     className="resize-y min-h-[100px]"
                     data-testid="input-project-inclusions"
                   />
@@ -1359,7 +1366,9 @@ export default function EstimateForm() {
                     value={projectExclusions}
                     onChange={e => setProjectExclusions(e.target.value)}
                     placeholder="• What is NOT included that the client might expect..."
-                    rows={4}
+                    className="min-h-[60px] overflow-hidden resize-none"
+                          style={{ height: "auto" }}
+                          onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
                     className="resize-y min-h-[100px]"
                     data-testid="input-project-exclusions"
                   />
@@ -1699,7 +1708,9 @@ export default function EstimateForm() {
                     value={notesInternal}
                     onChange={e => setNotesInternal(e.target.value)}
                     placeholder="Notes for the team..."
-                    rows={3}
+                    className="min-h-[60px] overflow-hidden resize-none"
+                          style={{ height: "auto" }}
+                          onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
                     data-testid="input-notes-internal"
                   />
                 </div>
