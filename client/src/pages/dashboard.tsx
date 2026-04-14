@@ -165,14 +165,32 @@ export default function Dashboard() {
                 if (!groups[label]) groups[label] = [];
                 groups[label].push(est);
               }
-              return Object.entries(groups).map(([day, ests]) => (
+              const dayColors = [
+                "border-l-orange-500 bg-orange-500/5",
+                "border-l-blue-500 bg-blue-500/5",
+                "border-l-emerald-500 bg-emerald-500/5",
+                "border-l-purple-500 bg-purple-500/5",
+                "border-l-rose-500 bg-rose-500/5",
+                "border-l-cyan-500 bg-cyan-500/5",
+                "border-l-amber-500 bg-amber-500/5",
+              ];
+              const dayDotColors = [
+                "bg-orange-500", "bg-blue-500", "bg-emerald-500", "bg-purple-500",
+                "bg-rose-500", "bg-cyan-500", "bg-amber-500",
+              ];
+              return Object.entries(groups).map(([day, ests], groupIdx) => (
                 <div key={day}>
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">{day}</h3>
+                  <div className="flex items-center gap-2 mb-3 px-1">
+                    <div className={`w-2 h-2 rounded-full ${dayDotColors[groupIdx % dayDotColors.length]}`} />
+                    <h3 className="text-xs font-bold uppercase tracking-wider">{day}</h3>
+                    <span className="text-[10px] text-muted-foreground">{ests.length} estimate{ests.length !== 1 ? "s" : ""}</span>
+                    <div className="flex-1 border-t border-border/50" />
+                  </div>
                   <div className="space-y-2">
                     {ests.map(estimate => (
               <Link key={estimate.id} href={`/estimates/${estimate.id}`}>
                 <div
-                  className="border rounded-lg p-4 hover:bg-muted/50 transition-colors cursor-pointer group"
+                  className={`border rounded-lg p-4 hover:bg-muted/50 transition-colors cursor-pointer group border-l-4 ${dayColors[groupIdx % dayColors.length]}`}
                   data-testid={`estimate-card-${estimate.id}`}
                 >
                   <div className="flex items-start justify-between gap-4">
