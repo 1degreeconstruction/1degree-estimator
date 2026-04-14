@@ -579,6 +579,28 @@ export default function EstimateDetailPage() {
                   <span className="text-muted-foreground">3% Allowance</span>
                   <span className="font-mono">{formatCurrency(estimate.allowanceAmount)}</span>
                 </div>
+                {(() => {
+                  const e = estimate as any;
+                  const hasApp = e.apparentDiscountType && e.apparentDiscountValue > 0;
+                  const hasReal = e.realDiscountType && e.realDiscountValue > 0;
+                  if (!hasApp && !hasReal) return null;
+                  return (
+                    <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-2 space-y-1">
+                      {hasApp && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Apparent Discount ({e.apparentDiscountType === "percent" ? `${e.apparentDiscountValue}%` : formatCurrency(e.apparentDiscountValue)})</span>
+                          <span className="font-mono text-green-500">Client sees savings</span>
+                        </div>
+                      )}
+                      {hasReal && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Real Discount ({e.realDiscountType === "percent" ? `${e.realDiscountValue}%` : formatCurrency(e.realDiscountValue)})</span>
+                          <span className="font-mono text-green-500">-{e.realDiscountType === "percent" ? `${e.realDiscountValue}%` : formatCurrency(e.realDiscountValue)}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <Separator />
                 <div className="flex justify-between font-semibold">
                   <span>Total</span>
