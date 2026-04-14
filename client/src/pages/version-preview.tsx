@@ -220,6 +220,49 @@ export default function VersionPreview() {
             </CardContent>
           </Card>
         )}
+
+        {/* Terms & Conditions */}
+        <Card className="mb-6 bg-white dark:bg-card">
+          <CardContent className="pt-5">
+            <h2 className="font-display text-lg font-bold mb-4">Standard Terms & Conditions</h2>
+            <div className="text-sm text-muted-foreground space-y-3">
+              <div><p className="font-semibold text-foreground">1. Standard of Care</p><p>All work will comply with the approved plans, industry standards, and applicable codes.</p></div>
+              <div><p className="font-semibold text-foreground">2. Cost of Work</p><p>Prices are valid for forty-five (45) days. After this period, the Contractor reserves the right to adjust pricing through a detailed change order.</p></div>
+              <div><p className="font-semibold text-foreground">3. Pre-existing Conditions</p><p>The Contractor is not responsible for addressing pre-existing deficiencies or missing details outside the defined scope of work.</p></div>
+              <div><p className="font-semibold text-foreground">4. Cancellation</p><p>30% liquidation fee for canceling any line item after the standard three-day cancellation period.</p></div>
+              <div><p className="font-semibold text-foreground">5. Change Orders</p><p>All change orders must be signed before work begins. Verbal agreements will not be honored.</p></div>
+              <div><p className="font-semibold text-foreground">6. Warranty</p><p>One-year limited workmanship warranty, excluding misuse, neglect, acts of God, or third-party alterations.</p></div>
+              <div><p className="font-semibold text-foreground">7. Lien Rights</p><p>The Contractor reserves the right to issue a lien for unpaid invoices beyond thirty (30) days.</p></div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Signature block */}
+        {estimate.signatureName ? (
+          <Card className="mb-6 bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800">
+            <CardContent className="pt-5">
+              <h2 className="font-display text-lg font-bold mb-3">Acceptance & Signature</h2>
+              <div className="flex justify-between items-end">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-1">Signed by:</p>
+                  <p className="text-lg font-semibold italic">{estimate.signatureName}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground mb-1">Date:</p>
+                  <p className="text-sm font-medium">{estimate.signatureTimestamp ? formatDateTime(estimate.signatureTimestamp) : ""}</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-3 italic">By signing, the client confirmed they reviewed this estimate and accepted the scope, pricing, and payment terms.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="mb-6 bg-white dark:bg-card">
+            <CardContent className="pt-5">
+              <h2 className="font-display text-lg font-bold mb-3">Acceptance & Signature</h2>
+              <p className="text-sm text-muted-foreground italic">Not yet signed at time of this version.</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

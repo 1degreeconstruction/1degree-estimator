@@ -604,7 +604,7 @@ export default function ClientEstimate() {
             </div>
           )}
 
-          {/* Inclusions / Exclusions / Terms & Conditions (collapsed) */}
+          {/* Inclusions / Exclusions / Terms & Conditions (collapsed on screen) */}
           <div className="no-print mb-8 space-y-2">
             <Collapsible>
               <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground w-full justify-between py-2" data-testid="toggle-inclusions">
@@ -771,6 +771,58 @@ export default function ClientEstimate() {
               <Download className="w-3.5 h-3.5" />
               Download PDF
             </button>
+          </div>
+
+          {/* Print-only: Terms & Conditions + Signature */}
+          <div className="hidden print:block space-y-6 mb-8">
+            {/* Standard Terms */}
+            <div>
+              <h2 className="font-display text-lg font-bold mb-4">Standard Terms & Conditions</h2>
+              <div className="text-sm text-muted-foreground space-y-3">
+                <div><p className="font-semibold text-foreground">1. Standard of Care</p><p>All work will comply with the approved plans, industry standards, and applicable codes. In case of a conflict, the Home Improvement Construction Agreement (HIC) and Addendum take precedence.</p></div>
+                <div><p className="font-semibold text-foreground">2. Cost of Work</p><p>Prices are valid for forty-five (45) days. After this period, the Contractor reserves the right to adjust pricing through a detailed change order.</p></div>
+                <div><p className="font-semibold text-foreground">3. Pre-existing Conditions and Scope Gaps</p><p>The Contractor is not responsible for addressing pre-existing deficiencies or missing details outside the defined scope of work. Repairs for unforeseen conditions such as dry rot, termite damage, or water damage require a signed change order.</p></div>
+                <div><p className="font-semibold text-foreground">4. Cancellation of Line Items</p><p>The client agrees to a 30% liquidation fee for canceling or removing any line item or portion of the project after the standard three-day cancellation period.</p></div>
+                <div><p className="font-semibold text-foreground">5. Change Orders</p><p>All change orders must be signed via DocuSign or wet signature before work begins. Verbal agreements will not be honored.</p></div>
+                <div><p className="font-semibold text-foreground">6. Warranty Provisions</p><p>A one-year limited workmanship warranty is provided, excluding misuse, neglect, abuse, acts of God, or normal wear and tear. Alterations by third parties void the warranty.</p></div>
+                <div><p className="font-semibold text-foreground">7. Jobsite Access and Safety</p><p>The client must ensure safe working conditions. Delays due to access or safety issues require resolution and may incur additional costs.</p></div>
+                <div><p className="font-semibold text-foreground">8. Lien Rights</p><p>The Contractor reserves the right to issue a lien for unpaid invoices beyond thirty (30) days.</p></div>
+                <div><p className="font-semibold text-foreground">9. Force Majeure</p><p>The Contractor is not liable for delays caused by uncontrollable events such as natural disasters or supply chain disruptions.</p></div>
+              </div>
+            </div>
+
+            {/* Signature block for print */}
+            {estimate.signatureName ? (
+              <div className="border-t-2 border-foreground pt-4">
+                <h2 className="font-display text-lg font-bold mb-3">Acceptance & Signature</h2>
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Signed by:</p>
+                    <p className="text-lg font-semibold italic">{estimate.signatureName}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm text-muted-foreground mb-1">Date:</p>
+                    <p className="text-sm font-medium">{estimate.signatureTimestamp ? formatDateTime(estimate.signatureTimestamp) : ""}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-3 italic">By signing, the client confirms they have reviewed this estimate and accept the scope of work, pricing, and payment terms as described above.</p>
+              </div>
+            ) : (
+              <div className="border-t-2 border-foreground pt-4">
+                <h2 className="font-display text-lg font-bold mb-6">Acceptance & Signature</h2>
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Client Signature:</p>
+                    <div className="border-b border-foreground w-64 h-8" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-1">Date:</p>
+                    <div className="border-b border-foreground w-32 h-8" />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-3 italic">By signing, the client confirms they have reviewed this estimate and accept the scope of work, pricing, and payment terms as described above.</p>
+              </div>
+            )}
           </div>
 
           {/* Accept & Sign */}
