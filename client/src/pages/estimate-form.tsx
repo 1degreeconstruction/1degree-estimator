@@ -589,10 +589,15 @@ export default function EstimateForm() {
   };
 
   // Track which milestones the user has manually edited
-  const [userEditedMilestones, setUserEditedMilestones] = useState<Set<number>>(new Set());
+  const [userEditedMilestones, setUserEditedMilestones] = useState<Set<string>>(new Set());
 
   const markMilestoneEdited = (index: number) => {
-    setUserEditedMilestones(prev => new Set(prev).add(index));
+    const name = milestones[index]?.milestoneName;
+    if (name) setUserEditedMilestones(prev => new Set(prev).add(name));
+  };
+
+  const isMilestoneEdited = (index: number) => {
+    return userEditedMilestones.has(milestones[index]?.milestoneName || "");
   };
 
   const generateDefaultMilestones = () => {
@@ -647,10 +652,10 @@ export default function EstimateForm() {
     if (milestones.length > 0 && userEditedMilestones.size > 0) {
       // Keep user-edited milestones, regenerate the rest
       const userEditedTotal = milestones
-        .filter((_, i) => userEditedMilestones.has(i))
+        .filter((_, i) => isMilestoneEdited(i))
         .reduce((sum, m) => sum + m.amount, 0);
       const remainingBudget = total - deposit - retentionTarget - userEditedTotal;
-      const unedited = milestones.filter((_, i) => !userEditedMilestones.has(i) && i !== 0 && i !== milestones.length - 1);
+      const unedited = milestones.filter((_, i) => !isMilestoneEdited(i) && i !== 0 && i !== milestones.length - 1);
       
       // Build new milestones: deposit + user-edited (highlighted) + new phases + retention
       const newMilestones: MilestoneForm[] = [
@@ -659,12 +664,12 @@ export default function EstimateForm() {
       let sortIdx = 1;
 
       // Determine which phases need new milestones (exclude ones already covered by user-edited)
-      const editedNames = milestones.filter((_, i) => userEditedMilestones.has(i)).map(m => m.milestoneName);
+      const editedNames = milestones.filter((_, i) => isMilestoneEdited(i)).map(m => m.milestoneName);
       const newPhases = phaseNames.filter(p => !editedNames.includes(p));
 
       // Re-add user-edited milestones
       milestones.forEach((m, i) => {
-        if (userEditedMilestones.has(i) && i !== 0) {
+        if (isMilestoneEdited(i) && i !== 0) {
           newMilestones.push({ ...m, sortOrder: sortIdx++ });
         }
       });
@@ -1335,7 +1340,7 @@ export default function EstimateForm() {
                 ) : (
                   <div className="space-y-3">
                     {milestones.map((m, idx) => {
-                      const isEdited = userEditedMilestones.has(idx);
+                      const isEdited = isMilestoneEdited(idx);
                       return (
                         <div key={idx} className={`flex items-center gap-2 rounded-md px-2 py-1 ${isEdited ? 'bg-amber-500/10 border border-amber-500/30' : ''}`} data-testid={`milestone-${idx}`}>
                           {/* Move buttons */}
@@ -1364,7 +1369,7 @@ export default function EstimateForm() {
                             placeholder="0.00"
                             data-testid={`input-milestone-amount-${idx}`}
                           />
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => { setUserEditedMilestones(prev => { const n = new Set(prev); n.delete(idx); return n; }); removeMilestone(idx); }} data-testid={`remove-milestone-${idx}`}>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={() => { const name = milestones[idx]?.milestoneName; setUserEditedMilestones(prev => { const n = new Set(prev); if (name) n.delete(name); return n; }); removeMilestone(idx); }} data-testid={`remove-milestone-${idx}`}>
                             <Trash2 className="w-3 h-3" />
                           </Button>
                         </div>
