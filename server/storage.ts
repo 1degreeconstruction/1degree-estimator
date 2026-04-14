@@ -139,9 +139,16 @@ export class DatabaseStorage implements IStorage {
 
   // Estimates
   async getEstimates(createdByUserId?: number, orgId?: number): Promise<Estimate[]> {
+    const conditions = [];
     if (createdByUserId !== undefined) {
+      conditions.push(eq(estimates.createdByUserId, createdByUserId));
+    }
+    if (orgId !== undefined) {
+      conditions.push(eq(estimates.orgId, orgId));
+    }
+    if (conditions.length > 0) {
       return db.select().from(estimates)
-        .where(eq(estimates.createdByUserId, createdByUserId))
+        .where(and(...conditions))
         .orderBy(desc(estimates.createdAt));
     }
     return db.select().from(estimates).orderBy(desc(estimates.createdAt));

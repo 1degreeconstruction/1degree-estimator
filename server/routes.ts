@@ -337,7 +337,7 @@ export async function registerRoutes(
       const mine = req.query.mine === "true";
       const userId = mine && req.user ? (req.user as Express.User).id : undefined;
 
-      const estimatesList = await storage.getEstimates(userId);
+      const estimatesList = await storage.getEstimates(userId, (req as any).orgId);
       const reps = await storage.getSalesReps((req as any).orgId);
       const usersList = await storage.listUsers();
 
