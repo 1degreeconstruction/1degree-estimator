@@ -471,6 +471,63 @@ export async function registerRoutes(
     }
   });
 
+  // POST /api/ai/recalc-milestones — AI fills in amounts for milestone names
+  app.post("/api/ai/recalc-milestones", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { totalClientPrice, milestones } = req.body;
+      if (!totalClientPrice || !milestones?.length) return res.status(400).json({ error: "totalClientPrice and milestones required" });
+
+      const anthropic = new Anthropic();
+      const milestoneList = milestones.map((m: any, i: number) => `${i + 1}. ${m.name}${m.amount ? ` (current: $${m.amount})` : ""}`).join("\n");
+
+      const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [{
+          role: "user",
+          content: `You are recalculating payment milestones for a construction estimate.
+
+Total client price: $${totalClientPrice}
+
+Current milestones:
+${milestoneList}
+
+Rules:
+- All amounts MUST sum to EXACTLY $${totalClientPrice}
+- First milestone should be deposit: lesser of $1,000 or 10% of total
+- Last milestone is retention/final walkthrough: approximately 10% of total
+- Progress payments should be top-heavy (earlier milestones slightly larger)
+- Round progress payments to nearest $500 (over $5K) or $100 (under $5K)
+- Retention absorbs all rounding differences
+- Keep the milestone NAMES exactly as provided, just fill in the amounts
+- If a milestone has $0, assign it a proportional amount
+
+Return ONLY a JSON object: {"milestones": [{"name": "...", "amount": 1234}]}`
+        }],
+      });
+
+      trackUsage("claude_ai", "recalc_milestones", (req as any).user?.id);
+      const text = response.content[0].type === "text" ? response.content[0].text : "";
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return res.status(422).json({ error: "Could not parse AI response" });
+
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      // Safety: ensure sum matches
+      if (parsed.milestones) {
+        const sum = parsed.milestones.reduce((s: number, m: any) => s + (m.amount || 0), 0);
+        const diff = totalClientPrice - sum;
+        if (Math.abs(diff) > 0.01 && parsed.milestones.length > 0) {
+          parsed.milestones[parsed.milestones.length - 1].amount += Math.round(diff * 100) / 100;
+        }
+      }
+
+      res.json(parsed);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // POST /api/calendar/parse-event — AI extracts client info from calendar event
   app.post("/api/calendar/parse-event", requireAuth as any, async (req: Request, res: Response) => {
     try {

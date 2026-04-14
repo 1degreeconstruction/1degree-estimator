@@ -534,6 +534,30 @@ export default function EstimateForm() {
     });
   };
 
+  // AI recalculate milestones
+  const [aiRecalcLoading, setAiRecalcLoading] = useState(false);
+  const aiRecalcMilestones = async () => {
+    setAiRecalcLoading(true);
+    try {
+      const res = await apiRequest("POST", "/api/ai/recalc-milestones", {
+        totalClientPrice: calculations.total,
+        milestones: milestones.map(m => ({ name: m.milestoneName, amount: m.amount })),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      const data = await res.json();
+      if (data.milestones) {
+        setMilestones(data.milestones.map((m: any, i: number) => ({
+          milestoneName: m.name || m.milestoneName || "",
+          amount: m.amount || 0,
+          sortOrder: i,
+        })));
+      }
+    } catch (err: any) {
+      toast({ title: "Recalculate failed", description: err.message, variant: "destructive" });
+    }
+    setAiRecalcLoading(false);
+  };
+
   // Milestone helpers
   const addMilestone = () => {
     setMilestones(prev => [
@@ -544,6 +568,16 @@ export default function EstimateForm() {
 
   const removeMilestone = (index: number) => {
     setMilestones(prev => prev.filter((_, i) => i !== index).map((m, i) => ({ ...m, sortOrder: i })));
+  };
+
+  const moveMilestone = (index: number, direction: "up" | "down") => {
+    setMilestones(prev => {
+      const arr = [...prev];
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= arr.length) return arr;
+      [arr[index], arr[target]] = [arr[target], arr[index]];
+      return arr.map((m, i) => ({ ...m, sortOrder: i }));
+    });
   };
 
   const updateMilestone = (index: number, field: keyof MilestoneForm, value: any) => {
@@ -1281,6 +1315,10 @@ export default function EstimateForm() {
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-sm font-semibold">Payment Schedule</CardTitle>
                 <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={aiRecalcMilestones} disabled={aiRecalcLoading || milestones.length === 0} className="gap-1" data-testid="button-recalc-milestones">
+                    <Sparkles className="w-3 h-3" />
+                    {aiRecalcLoading ? "Calculating..." : "AI Recalculate"}
+                  </Button>
                   <Button variant="outline" size="sm" onClick={generateDefaultMilestones} data-testid="button-generate-milestones">
                     Auto-Generate
                   </Button>
@@ -1299,7 +1337,17 @@ export default function EstimateForm() {
                     {milestones.map((m, idx) => {
                       const isEdited = userEditedMilestones.has(idx);
                       return (
-                        <div key={idx} className={`flex items-center gap-3 rounded-md px-2 py-1 ${isEdited ? 'bg-amber-500/10 border border-amber-500/30' : ''}`} data-testid={`milestone-${idx}`}>
+                        <div key={idx} className={`flex items-center gap-2 rounded-md px-2 py-1 ${isEdited ? 'bg-amber-500/10 border border-amber-500/30' : ''}`} data-testid={`milestone-${idx}`}>
+                          {/* Move buttons */}
+                          <div className="flex flex-col gap-0.5">
+                            <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => moveMilestone(idx, "up")} disabled={idx === 0}>
+                              <ArrowUp className="w-3 h-3" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => moveMilestone(idx, "down")} disabled={idx === milestones.length - 1}>
+                              <ArrowDown className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          <span className="text-xs text-muted-foreground w-5 text-center">{idx + 1}</span>
                           {isEdited && <span className="text-[9px] text-amber-500 font-medium whitespace-nowrap">LOCKED</span>}
                           <Input
                             className="flex-1"
