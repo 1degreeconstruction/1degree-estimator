@@ -1409,7 +1409,13 @@ RULES:
       const markupMultiplier = 1 + markupRate / 100;
       const totalBeforeAllowance = Math.round(totalSubCost * markupMultiplier * 100) / 100;
       const allowanceAmount = Math.round(totalBeforeAllowance * 0.03 * 100) / 100;
-      const totalClientPrice = Math.round((totalBeforeAllowance + allowanceAmount) * 100) / 100;
+      let totalClientPrice = Math.round((totalBeforeAllowance + allowanceAmount) * 100) / 100;
+      // Apply real discount (actually reduces total)
+      if (estimateData.realDiscountType === "percent" && estimateData.realDiscountValue > 0) {
+        totalClientPrice = Math.round(totalClientPrice * (1 - estimateData.realDiscountValue / 100) * 100) / 100;
+      } else if (estimateData.realDiscountType === "dollar" && estimateData.realDiscountValue > 0) {
+        totalClientPrice = Math.round((totalClientPrice - estimateData.realDiscountValue) * 100) / 100;
+      }
       const depositAmount = Math.min(1000, Math.round(totalClientPrice * 0.1 * 100) / 100);
 
       const currentUserId = req.user ? (req.user as Express.User).id : null;
@@ -1590,7 +1596,13 @@ RULES:
       const markupMultiplier = 1 + markupRate / 100;
       const totalBeforeAllowance = Math.round(totalSubCost * markupMultiplier * 100) / 100;
       const allowanceAmount = Math.round(totalBeforeAllowance * 0.03 * 100) / 100;
-      const totalClientPrice = Math.round((totalBeforeAllowance + allowanceAmount) * 100) / 100;
+      let totalClientPrice = Math.round((totalBeforeAllowance + allowanceAmount) * 100) / 100;
+      // Apply real discount (actually reduces total)
+      if (estimateData.realDiscountType === "percent" && estimateData.realDiscountValue > 0) {
+        totalClientPrice = Math.round(totalClientPrice * (1 - estimateData.realDiscountValue / 100) * 100) / 100;
+      } else if (estimateData.realDiscountType === "dollar" && estimateData.realDiscountValue > 0) {
+        totalClientPrice = Math.round((totalClientPrice - estimateData.realDiscountValue) * 100) / 100;
+      }
       const depositAmount = Math.min(1000, Math.round(totalClientPrice * 0.1 * 100) / 100);
 
       const now = new Date();
