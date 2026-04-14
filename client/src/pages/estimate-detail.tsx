@@ -569,14 +569,56 @@ export default function EstimateDetailPage() {
                   <CardTitle className="text-sm font-semibold">Payment Schedule</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    {estimate.milestones.sort((a, b) => a.sortOrder - b.sortOrder).map((m, idx) => (
-                      <div key={m.id} className="flex justify-between text-sm" data-testid={`milestone-row-${idx}`}>
-                        <span className="text-muted-foreground">{m.milestoneName}</span>
-                        <span className="font-mono">{formatCurrency(m.amount)}</span>
+                  {(() => {
+                    const ed = estimate as any;
+                    const hasDisc = (ed.apparentDiscountType && ed.apparentDiscountValue > 0) || (ed.realDiscountType && ed.realDiscountValue > 0);
+                    let discSavings = 0;
+                    if (hasDisc) {
+                      let orig = estimate.totalClientPrice;
+                      if (ed.apparentDiscountType && ed.apparentDiscountValue > 0) {
+                        orig = ed.apparentDiscountType === "percent"
+                          ? Math.round(estimate.totalClientPrice / (1 - ed.apparentDiscountValue / 100) * 100) / 100
+                          : estimate.totalClientPrice + ed.apparentDiscountValue;
+                        discSavings = orig - estimate.totalClientPrice;
+                      }
+                      if (ed.realDiscountType && ed.realDiscountValue > 0) {
+                        if (ed.realDiscountType === "percent") {
+                          const pre = Math.round(estimate.totalClientPrice / (1 - ed.realDiscountValue / 100) * 100) / 100;
+                          discSavings += pre - estimate.totalClientPrice;
+                        } else {
+                          discSavings += ed.realDiscountValue;
+                        }
+                      }
+                    }
+                    const sorted = [...estimate.milestones].sort((a, b) => a.sortOrder - b.sortOrder);
+                    const retentionIdx = sorted.length - 1;
+                    const nonRetentionTotal = sorted.slice(0, retentionIdx).reduce((s, ms) => s + ms.amount, 0);
+
+                    return (
+                      <div className="space-y-2">
+                        {sorted.map((m, idx) => {
+                          const isRetention = idx === retentionIdx;
+                          const share = !isRetention && nonRetentionTotal > 0 ? m.amount / nonRetentionTotal : 0;
+                          const mDisc = hasDisc && !isRetention ? Math.round(discSavings * share * 100) / 100 : 0;
+                          const net = Math.round((m.amount - mDisc) * 100) / 100;
+                          return (
+                            <div key={m.id} className="flex justify-between text-sm" data-testid={`milestone-row-${idx}`}>
+                              <span className="text-muted-foreground">{m.milestoneName}</span>
+                              {mDisc > 0 ? (
+                                <div className="text-right">
+                                  <span className="font-mono text-xs text-muted-foreground line-through mr-2">{formatCurrency(m.amount)}</span>
+                                  <span className="font-mono text-green-500">{formatCurrency(net)}</span>
+                                  <span className="text-[10px] text-green-500/70 ml-1">(-{formatCurrency(mDisc)})</span>
+                                </div>
+                              ) : (
+                                <span className="font-mono">{formatCurrency(m.amount)}</span>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()}
                 </CardContent>
               </Card>
             )}
