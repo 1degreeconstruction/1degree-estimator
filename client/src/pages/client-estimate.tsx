@@ -29,13 +29,23 @@ type ClientLineItem = {
   customPhaseLabel: string | null;
   scopeDescription: string;
   clientPrice: number;
+  originalPrice: number;
+  discountedPrice: number;
   isGrouped: boolean;
+};
+
+type DiscountInfo = {
+  originalTotal: number;
+  totalSavings: number;
+  savingsPct: number;
+  savingsPctLabel: string;
 };
 
 type ClientEstimate = Omit<Estimate, "totalSubCost"> & {
   salesRep?: SalesRep;
   lineItems: ClientLineItem[];
   milestones: PaymentMilestone[];
+  discount: DiscountInfo | null;
 };
 
 function getPhaseLabel(value: string, customLabel?: string | null): string {
@@ -337,39 +347,8 @@ export default function ClientEstimate() {
   // Recalculate subtotal from visible client prices
   const subtotal = sortedItems.reduce((sum, i) => sum + i.clientPrice, 0);
 
-  // Deterministic discount calc — derive everything from stored discount fields
-  const eAny = estimate as any;
-  const hasApparentDiscount = eAny.apparentDiscountType && eAny.apparentDiscountValue > 0;
-  const hasRealDiscount = eAny.realDiscountType && eAny.realDiscountValue > 0;
-  const hasDiscount = hasApparentDiscount || hasRealDiscount;
-
-  // totalSavings = exact dollar amount saved; originalTotal = price before discount
-  let totalSavings = 0;
-  let originalTotal = estimate.totalClientPrice;
-  if (hasApparentDiscount) {
-    if (eAny.apparentDiscountType === "percent") {
-      // apparent % inflates visible original: original * (1 - pct) = current
-      originalTotal = Math.round(estimate.totalClientPrice / (1 - eAny.apparentDiscountValue / 100) * 100) / 100;
-    } else {
-      originalTotal = estimate.totalClientPrice + eAny.apparentDiscountValue;
-    }
-    totalSavings = originalTotal - estimate.totalClientPrice;
-  }
-  if (hasRealDiscount) {
-    if (eAny.realDiscountType === "percent") {
-      // real % already baked into totalClientPrice
-      const preReal = Math.round(estimate.totalClientPrice / (1 - eAny.realDiscountValue / 100) * 100) / 100;
-      totalSavings += preReal - estimate.totalClientPrice;
-      if (!hasApparentDiscount) originalTotal = preReal;
-    } else {
-      totalSavings += eAny.realDiscountValue;
-      if (!hasApparentDiscount) originalTotal = estimate.totalClientPrice + eAny.realDiscountValue;
-    }
-  }
-  // savingsPct is the single source of truth for display (1 decimal place)
-  const savingsPctRaw = originalTotal > 0 ? (totalSavings / originalTotal) * 100 : 0;
-  const savingsPct = Math.round(savingsPctRaw * 10) / 10; // e.g. 0.5%, 4.8%, 15.0%
-  const savingsPctLabel = savingsPct % 1 === 0 ? savingsPct.toFixed(0) : savingsPct.toFixed(1);
+  // Discount values come pre-calculated from the server — zero client-side math
+  const discount = estimate.discount;
 
   return (
     <>
@@ -443,21 +422,22 @@ export default function ClientEstimate() {
                   <div className="flex items-center justify-between p-4 bg-muted/30">
                     <h3 className="font-semibold text-sm">{section.label}</h3>
                     {(() => {
-                      const linePrice = section.collectivePrice !== null ? section.collectivePrice : section.items[0].clientPrice;
-                      if (hasDiscount && totalSavings > 0) {
-                        // Distribute dollar savings proportionally to each line item
-                        const itemShare = originalTotal > 0 ? linePrice / originalTotal : 0;
-                        const itemSavings = Math.round(totalSavings * itemShare * 100) / 100;
-                        const discountedPrice = Math.round((linePrice - itemSavings) * 100) / 100;
+                      const origPrice = section.collectivePrice !== null
+                        ? section.items.reduce((s, i) => s + i.originalPrice, 0)
+                        : section.items[0].originalPrice;
+                      const discPrice = section.collectivePrice !== null
+                        ? section.items.reduce((s, i) => s + i.discountedPrice, 0)
+                        : section.items[0].discountedPrice;
+                      if (discount && origPrice !== discPrice) {
                         return (
                           <div className="text-right flex items-center gap-2">
-                            <span className="font-mono text-xs text-muted-foreground line-through">{formatCurrency(linePrice)}</span>
-                            <span className="font-mono text-sm font-semibold text-green-600 dark:text-green-400">{formatCurrency(discountedPrice)}</span>
-                            <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/15 px-1.5 py-0.5 rounded">{savingsPctLabel}% off</span>
+                            <span className="font-mono text-xs text-muted-foreground line-through">{formatCurrency(origPrice)}</span>
+                            <span className="font-mono text-sm font-semibold text-green-600 dark:text-green-400">{formatCurrency(discPrice)}</span>
+                            <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/15 px-1.5 py-0.5 rounded">{discount.savingsPctLabel}% off</span>
                           </div>
                         );
                       }
-                      return <span className="font-mono text-sm font-semibold">{formatCurrency(linePrice)}</span>;
+                      return <span className="font-mono text-sm font-semibold">{formatCurrency(origPrice)}</span>;
                     })()}
                   </div>
                   <CardContent className="pt-3 pb-4">
@@ -499,15 +479,15 @@ export default function ClientEstimate() {
               </p>
               <Separator />
               {/* Discount display */}
-              {hasDiscount && totalSavings > 0 && (
+              {discount && (
                 <div className="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-lg p-3 mb-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Original Price</span>
-                    <span className="font-mono line-through text-muted-foreground">{formatCurrency(originalTotal)}</span>
+                    <span className="font-mono line-through text-muted-foreground">{formatCurrency(discount.originalTotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm font-semibold text-green-700 dark:text-green-400">
-                    <span>You Save ({savingsPctLabel}%)</span>
-                    <span className="font-mono">-{formatCurrency(totalSavings)}</span>
+                    <span>You Save ({discount.savingsPctLabel}%)</span>
+                    <span className="font-mono">-{formatCurrency(discount.totalSavings)}</span>
                   </div>
                 </div>
               )}

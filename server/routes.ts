@@ -440,12 +440,58 @@ export async function registerRoutes(
       // Strip internal costs for client view
       const clientItems = items.map(({ subCost, ...item }) => item);
 
+      // Pre-calculate all discount display values server-side
+      const e = estimate as any;
+      const hasApparentDiscount = e.apparentDiscountType && e.apparentDiscountValue > 0;
+      const hasRealDiscount = e.realDiscountType && e.realDiscountValue > 0;
+      let originalTotal = estimate.totalClientPrice;
+      let totalSavings = 0;
+
+      if (hasApparentDiscount) {
+        if (e.apparentDiscountType === "percent") {
+          originalTotal = Math.round(estimate.totalClientPrice / (1 - e.apparentDiscountValue / 100) * 100) / 100;
+        } else {
+          originalTotal = estimate.totalClientPrice + e.apparentDiscountValue;
+        }
+        totalSavings = originalTotal - estimate.totalClientPrice;
+      }
+      if (hasRealDiscount) {
+        if (e.realDiscountType === "percent") {
+          const preReal = Math.round(estimate.totalClientPrice / (1 - e.realDiscountValue / 100) * 100) / 100;
+          totalSavings += preReal - estimate.totalClientPrice;
+          if (!hasApparentDiscount) originalTotal = preReal;
+        } else {
+          totalSavings += e.realDiscountValue;
+          if (!hasApparentDiscount) originalTotal = estimate.totalClientPrice + e.realDiscountValue;
+        }
+      }
+
+      const savingsPctRaw = originalTotal > 0 ? (totalSavings / originalTotal) * 100 : 0;
+      const savingsPct = Math.round(savingsPctRaw * 10) / 10;
+
+      // Pre-calculate discounted price per line item
+      const clientItemsWithDiscount = clientItems.map((item: any) => {
+        if (totalSavings > 0 && originalTotal > 0) {
+          const share = item.clientPrice / originalTotal;
+          const itemSavings = Math.round(totalSavings * share * 100) / 100;
+          return { ...item, originalPrice: item.clientPrice, discountedPrice: Math.round((item.clientPrice - itemSavings) * 100) / 100 };
+        }
+        return { ...item, originalPrice: item.clientPrice, discountedPrice: item.clientPrice };
+      });
+
       res.json({
         ...estimate,
         totalSubCost: undefined,
         salesRep,
-        lineItems: clientItems,
+        lineItems: clientItemsWithDiscount,
         milestones,
+        // Discount display values — no client-side math needed
+        discount: totalSavings > 0 ? {
+          originalTotal,
+          totalSavings,
+          savingsPct,
+          savingsPctLabel: savingsPct % 1 === 0 ? savingsPct.toFixed(0) : savingsPct.toFixed(1),
+        } : null,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -912,17 +958,55 @@ Rules:
         await storage.updateEstimate(id, { status: "sent", sentAt: new Date() });
       }
 
-      // Capture version snapshot
+      // Capture version snapshot — same format as client-facing API response
       try {
-        const lineItems = await storage.getLineItems(id);
-        const milestones = await storage.getPaymentMilestones(id);
-        const freshEstimate = await storage.getEstimate(id);
-        const versionCount = await db.execute(sql`SELECT COUNT(*) as cnt FROM estimate_versions WHERE estimate_id = ${id}`);
-        const nextVersion = parseInt((versionCount.rows[0] as any).cnt) + 1;
-        await db.execute(sql`
-          INSERT INTO estimate_versions (estimate_id, version_number, snapshot_json, changed_by_user_id, changed_at, change_summary, org_id)
-          VALUES (${id}, ${nextVersion}, ${JSON.stringify({ estimate: freshEstimate, lineItems, milestones })}::jsonb, ${user.id}, NOW(), ${`Sent to ${allRecipients.join(", ")}`}, ${(freshEstimate as any)?.orgId || 1})
-        `);
+        const snapItems = await storage.getLineItems(id);
+        const snapMilestones = await storage.getPaymentMilestones(id);
+        const snapEstimate = await storage.getEstimate(id);
+        if (snapEstimate) {
+          // Compute discount display values (mirrors public endpoint)
+          const se = snapEstimate as any;
+          const hasApp = se.apparentDiscountType && se.apparentDiscountValue > 0;
+          const hasReal = se.realDiscountType && se.realDiscountValue > 0;
+          let snapOriginal = snapEstimate.totalClientPrice;
+          let snapSavings = 0;
+          if (hasApp) {
+            snapOriginal = se.apparentDiscountType === "percent"
+              ? Math.round(snapEstimate.totalClientPrice / (1 - se.apparentDiscountValue / 100) * 100) / 100
+              : snapEstimate.totalClientPrice + se.apparentDiscountValue;
+            snapSavings = snapOriginal - snapEstimate.totalClientPrice;
+          }
+          if (hasReal) {
+            if (se.realDiscountType === "percent") {
+              const pre = Math.round(snapEstimate.totalClientPrice / (1 - se.realDiscountValue / 100) * 100) / 100;
+              snapSavings += pre - snapEstimate.totalClientPrice;
+              if (!hasApp) snapOriginal = pre;
+            } else {
+              snapSavings += se.realDiscountValue;
+              if (!hasApp) snapOriginal = snapEstimate.totalClientPrice + se.realDiscountValue;
+            }
+          }
+          const sPctRaw = snapOriginal > 0 ? (snapSavings / snapOriginal) * 100 : 0;
+          const sPct = Math.round(sPctRaw * 10) / 10;
+
+          const snapLineItems = snapItems.map((item: any) => {
+            if (snapSavings > 0 && snapOriginal > 0) {
+              const share = item.clientPrice / snapOriginal;
+              const iSav = Math.round(snapSavings * share * 100) / 100;
+              return { ...item, originalPrice: item.clientPrice, discountedPrice: Math.round((item.clientPrice - iSav) * 100) / 100 };
+            }
+            return { ...item, originalPrice: item.clientPrice, discountedPrice: item.clientPrice };
+          });
+
+          const discount = snapSavings > 0 ? { originalTotal: snapOriginal, totalSavings: snapSavings, savingsPct: sPct, savingsPctLabel: sPct % 1 === 0 ? sPct.toFixed(0) : sPct.toFixed(1) } : null;
+
+          const versionCount = await db.execute(sql`SELECT COUNT(*) as cnt FROM estimate_versions WHERE estimate_id = ${id}`);
+          const nextVersion = parseInt((versionCount.rows[0] as any).cnt) + 1;
+          await db.execute(sql`
+            INSERT INTO estimate_versions (estimate_id, version_number, snapshot_json, changed_by_user_id, changed_at, change_summary, org_id)
+            VALUES (${id}, ${nextVersion}, ${JSON.stringify({ estimate: snapEstimate, lineItems: snapLineItems, milestones: snapMilestones, discount })}::jsonb, ${user.id}, NOW(), ${`Sent to ${allRecipients.join(", ")}`}, ${se.orgId || 1})
+          `);
+        }
       } catch (snapErr: any) {
         console.error("[version-snapshot]", snapErr.message);
       }
