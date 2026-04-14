@@ -912,6 +912,21 @@ Rules:
         await storage.updateEstimate(id, { status: "sent", sentAt: new Date() });
       }
 
+      // Capture version snapshot
+      try {
+        const lineItems = await storage.getLineItems(id);
+        const milestones = await storage.getPaymentMilestones(id);
+        const freshEstimate = await storage.getEstimate(id);
+        const versionCount = await db.execute(sql`SELECT COUNT(*) as cnt FROM estimate_versions WHERE estimate_id = ${id}`);
+        const nextVersion = parseInt((versionCount.rows[0] as any).cnt) + 1;
+        await db.execute(sql`
+          INSERT INTO estimate_versions (estimate_id, version_number, snapshot_json, changed_by_user_id, changed_at, change_summary, org_id)
+          VALUES (${id}, ${nextVersion}, ${JSON.stringify({ estimate: freshEstimate, lineItems, milestones })}::jsonb, ${user.id}, NOW(), ${`Sent to ${allRecipients.join(", ")}`}, ${(freshEstimate as any)?.orgId || 1})
+        `);
+      } catch (snapErr: any) {
+        console.error("[version-snapshot]", snapErr.message);
+      }
+
       await storage.logActivity({
         estimateId: id,
         userId: user.id,
@@ -923,6 +938,22 @@ Rules:
     } catch (err: any) {
       console.error("[send-email] error:", err);
       res.status(500).json({ error: err.message || "Failed to send email" });
+    }
+  });
+
+  // GET /api/estimates/:id/versions — get version history
+  app.get("/api/estimates/:id/versions", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const versions = await db.execute(sql`
+        SELECT v.*, u.name as changed_by_name
+        FROM estimate_versions v LEFT JOIN users u ON u.id = v.changed_by_user_id
+        WHERE v.estimate_id = ${id}
+        ORDER BY v.version_number DESC
+      `);
+      res.json(versions.rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
