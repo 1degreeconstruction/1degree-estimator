@@ -3065,7 +3065,7 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
       }
 
       const members = await db.execute(sql`
-        SELECT m.id, m.user_id, m.role, m.is_active, m.created_at, u.name, u.email, u.avatar_url
+        SELECT m.id, m.user_id, m.role, m.is_active, m.created_at, u.name, u.email, u.avatar_url, u.google_id
         FROM org_memberships m JOIN users u ON u.id = m.user_id
         WHERE m.org_id = ${orgId} ORDER BY m.created_at
       `);
@@ -3283,6 +3283,56 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
         emailSent,
         loginUrl: appUrl,
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/platform/orgs/:id/resend-invite — resend invite email to existing member
+  app.post("/api/platform/orgs/:id/resend-invite", requireAuth as any, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: "email is required" });
+
+      const orgRows = await db.execute(sql`SELECT * FROM organizations WHERE id = ${orgId}`);
+      if (orgRows.rows.length === 0) return res.status(404).json({ error: "Org not found" });
+      const org = orgRows.rows[0] as any;
+
+      const teamAccessToken = await storage.getConfig("team_access_token");
+      const teamRefreshToken = await storage.getConfig("team_refresh_token");
+      const teamEmail = await storage.getConfig("team_gmail_email");
+      const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
+
+      if (!teamAccessToken || !teamEmail) {
+        return res.status(400).json({ error: "Team inbox not connected — cannot send email" });
+      }
+
+      const html = `<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;">
+        <div style="background:#0a0a0a;padding:24px 32px;border-radius:8px 8px 0 0;">
+          <div style="color:#e87722;font-size:20px;font-weight:700;">Reminder: You're Invited</div>
+        </div>
+        <div style="background:#fff;padding:32px;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;">
+          <p style="margin:0 0 16px;font-size:15px;color:#333;">This is a reminder that you've been invited to join <strong>${org.name}</strong> on our estimating platform.</p>
+          <p style="margin:0 0 24px;font-size:14px;color:#555;">Click the button below to sign in with your Google account and get started.</p>
+          <div style="text-align:center;">
+            <a href="${appUrl}" style="display:inline-block;background:#e87722;color:#fff;padding:14px 36px;border-radius:6px;font-size:15px;font-weight:600;text-decoration:none;">Sign In to ${org.name}</a>
+          </div>
+          <p style="margin:24px 0 0;font-size:12px;color:#999;">Sign in with <strong>${email}</strong> to access your workspace.</p>
+        </div>
+      </div>`;
+
+      await sendGmailEmail({
+        senderName: "Estimator Platform",
+        senderEmail: teamEmail,
+        accessToken: teamAccessToken,
+        refreshToken: teamRefreshToken,
+        to: email,
+        subject: `Reminder: You're invited to ${org.name} - Estimating Platform`,
+        html,
+      });
+
+      res.json({ ok: true, emailSent: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

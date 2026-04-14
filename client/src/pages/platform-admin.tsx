@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Building2, Users, Plus, Trash2, ChevronRight, Globe, Phone, Mail, Shield, Settings,
+  Building2, Users, Plus, Trash2, ChevronRight, Globe, Phone, Mail, Shield, Settings, Send,
 } from "lucide-react";
 
 interface Org {
@@ -20,7 +20,7 @@ interface Org {
 }
 
 interface Member {
-  id: number; user_id: number; role: string; is_active: boolean; name: string; email: string; avatar_url: string;
+  id: number; user_id: number; role: string; is_active: boolean; name: string; email: string; avatar_url: string; google_id: string;
 }
 
 export default function PlatformAdmin() {
@@ -84,6 +84,12 @@ export default function PlatformAdmin() {
       qc.invalidateQueries({ queryKey: ["/api/platform/orgs", selectedOrgId, "members"] });
       toast({ title: "Role updated" });
     },
+  });
+
+  const resendInviteMutation = useMutation({
+    mutationFn: (email: string) => apiRequest("POST", `/api/platform/orgs/${selectedOrgId}/resend-invite`, { email }).then(r => r.json()),
+    onSuccess: () => toast({ title: "Invite resent" }),
+    onError: (e: any) => toast({ title: "Resend failed", description: e.message, variant: "destructive" }),
   });
 
   const deleteOrgMutation = useMutation({
@@ -230,6 +236,16 @@ export default function PlatformAdmin() {
                           <div className="text-xs text-zinc-500">{m.email}</div>
                         </div>
                         <div className="flex items-center gap-2">
+                          {(m.google_id?.startsWith("invite-") || m.google_id?.startsWith("placeholder-")) && (
+                            <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-400/30">Pending</Badge>
+                          )}
+                          {(m.google_id?.startsWith("invite-") || m.google_id?.startsWith("placeholder-")) && (
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-orange-400 hover:text-orange-300 gap-1"
+                              onClick={() => resendInviteMutation.mutate(m.email)}
+                              disabled={resendInviteMutation.isPending}>
+                              <Send className="w-3 h-3" /> Resend
+                            </Button>
+                          )}
                           <Select value={m.role} onValueChange={role => changeRoleMutation.mutate({ userId: m.user_id, role })}>
                             <SelectTrigger className="w-28 h-7 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent>
