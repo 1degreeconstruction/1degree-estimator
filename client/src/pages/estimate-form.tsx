@@ -1353,7 +1353,16 @@ export default function EstimateForm() {
                             </Button>
                           </div>
                           <span className="text-xs text-muted-foreground w-5 text-center">{idx + 1}</span>
-                          {isEdited && <span className="text-[9px] text-amber-500 font-medium whitespace-nowrap">LOCKED</span>}
+                          {isEdited && (
+                            <button
+                              type="button"
+                              onClick={() => setUserEditedMilestones(prev => { const n = new Set(prev); n.delete(m.milestoneName); return n; })}
+                              className="text-[9px] text-amber-500 font-medium whitespace-nowrap hover:text-amber-300 cursor-pointer"
+                              title="Click to unlock so AI can adjust this milestone"
+                            >
+                              LOCKED ×
+                            </button>
+                          )}
                           <Input
                             className="flex-1"
                             value={m.milestoneName}
