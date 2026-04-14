@@ -1823,11 +1823,6 @@ export default function EstimateForm() {
             </div>
             <span className="text-muted-foreground/40">·</span>
             <div className="flex items-center gap-1 whitespace-nowrap">
-              <span className="text-muted-foreground">Deposit:</span>
-              <span className="font-mono" data-testid="text-deposit">{formatCurrency(calculations.deposit)}</span>
-            </div>
-            <span className="text-muted-foreground/40">·</span>
-            <div className="flex items-center gap-1 whitespace-nowrap">
               <span className="text-muted-foreground">Margin:</span>
               <span className="font-mono">{formatCurrency(calculations.margin)}</span>
             </div>
