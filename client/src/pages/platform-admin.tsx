@@ -59,6 +59,16 @@ export default function PlatformAdmin() {
     onError: () => toast({ title: "Failed to add member", variant: "destructive" }),
   });
 
+  const inviteMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/platform/orgs/${selectedOrgId}/invite`, { email: addEmail, role: addRole }).then(r => r.json()),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ["/api/platform/orgs", selectedOrgId, "members"] });
+      setAddEmail("");
+      toast({ title: data.emailSent ? `Invite sent to ${data.email}` : `Member added (email not sent — connect team inbox first)` });
+    },
+    onError: (e: any) => toast({ title: "Invite failed", description: e.message, variant: "destructive" }),
+  });
+
   const removeMemberMutation = useMutation({
     mutationFn: (userId: number) => apiRequest("DELETE", `/api/platform/orgs/${selectedOrgId}/members/${userId}`),
     onSuccess: () => {
@@ -203,8 +213,11 @@ export default function PlatformAdmin() {
                         <SelectItem value="viewer">Viewer</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Button size="sm" onClick={() => addMemberMutation.mutate()} disabled={!addEmail.includes("@") || addMemberMutation.isPending} className="gap-1">
+                    <Button size="sm" variant="outline" onClick={() => addMemberMutation.mutate()} disabled={!addEmail.includes("@") || addMemberMutation.isPending} className="gap-1">
                       <Plus className="w-3 h-3" /> Add
+                    </Button>
+                    <Button size="sm" className="gap-1 bg-orange-600 hover:bg-orange-700" onClick={() => inviteMutation.mutate()} disabled={!addEmail.includes("@") || inviteMutation.isPending}>
+                      <Mail className="w-3 h-3" /> {inviteMutation.isPending ? "Sending..." : "Invite"}
                     </Button>
                   </div>
 

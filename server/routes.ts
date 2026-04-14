@@ -194,23 +194,37 @@ export async function registerRoutes(
           return done(null, user as Express.User);
         }
 
-        // New user — check if pre-approved
+        // New user — check if pre-approved OR has a pending org membership
         const preApprovedRole = PRE_APPROVED_EMAILS[email.toLowerCase()];
-        const isActive = !!preApprovedRole;
-        const role = preApprovedRole || "estimator";
+        // Also check if this email was invited to any org
+        const pendingMembership = await db.execute(sql`
+          SELECT m.role FROM org_memberships m JOIN users u ON u.id = m.user_id
+          WHERE u.email = ${email.toLowerCase()} AND m.is_active = true LIMIT 1
+        `);
+        const hasMembership = pendingMembership.rows.length > 0;
+        const isActive = !!preApprovedRole || hasMembership;
+        const role = preApprovedRole || (hasMembership ? (pendingMembership.rows[0] as any).role : "estimator");
 
-        const newUser = await storage.createUser({
-          googleId,
-          email,
-          name,
-          avatarUrl,
-          role,
-          isActive,
-          createdAt: new Date(),
-          lastLoginAt: new Date(),
-          googleAccessToken: accessToken,
-          googleRefreshToken: refreshToken || null,
-        });
+        // Check if a placeholder user exists (from invite)
+        const existingByEmail = await storage.getUserByEmail(email);
+        let newUser;
+        if (existingByEmail) {
+          // Update placeholder with real Google credentials
+          newUser = await storage.updateUser(existingByEmail.id, {
+            googleId, name, avatarUrl, role, isActive,
+            lastLoginAt: new Date(),
+            googleAccessToken: accessToken,
+            googleRefreshToken: refreshToken || null,
+          });
+        } else {
+          newUser = await storage.createUser({
+            googleId, email, name, avatarUrl, role, isActive,
+            createdAt: new Date(),
+            lastLoginAt: new Date(),
+            googleAccessToken: accessToken,
+            googleRefreshToken: refreshToken || null,
+          });
+        }
 
         return done(null, newUser as Express.User);
       } catch (err) {
@@ -3185,6 +3199,90 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
       if (!role) return res.status(400).json({ error: "role is required" });
       await db.execute(sql`UPDATE org_memberships SET role = ${role} WHERE org_id = ${orgId} AND user_id = ${userId}`);
       res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/platform/orgs/:id/invite — add member + send invite email
+  app.post("/api/platform/orgs/:id/invite", requireAuth as any, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      const { email, role } = req.body;
+      if (!email) return res.status(400).json({ error: "email is required" });
+
+      // Get org details
+      const orgRows = await db.execute(sql`SELECT * FROM organizations WHERE id = ${orgId}`);
+      if (orgRows.rows.length === 0) return res.status(404).json({ error: "Org not found" });
+      const org = orgRows.rows[0] as any;
+
+      // Find or create user
+      let invitedUser = await storage.getUserByEmail(email);
+      if (!invitedUser) {
+        invitedUser = await storage.createUser({
+          googleId: `invite-${Date.now()}`,
+          email,
+          name: email.split("@")[0],
+          role: role || "estimator",
+          isActive: true,
+          createdAt: new Date(),
+        });
+      }
+
+      // Add org membership
+      await db.execute(sql`
+        INSERT INTO org_memberships (user_id, org_id, role, is_active, created_at)
+        VALUES (${invitedUser.id}, ${orgId}, ${role || "estimator"}, true, NOW())
+        ON CONFLICT (user_id, org_id) DO UPDATE SET role = ${role || "estimator"}, is_active = true
+      `);
+
+      // Send invite email using team inbox tokens
+      const teamAccessToken = await storage.getConfig("team_access_token");
+      const teamRefreshToken = await storage.getConfig("team_refresh_token");
+      const teamEmail = await storage.getConfig("team_gmail_email");
+
+      const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
+      let emailSent = false;
+
+      if (teamAccessToken && teamEmail) {
+        const html = `<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;">
+          <div style="background:#0a0a0a;padding:24px 32px;border-radius:8px 8px 0 0;">
+            <div style="color:#e87722;font-size:20px;font-weight:700;">You're Invited</div>
+          </div>
+          <div style="background:#fff;padding:32px;border:1px solid #eee;border-top:none;border-radius:0 0 8px 8px;">
+            <p style="margin:0 0 16px;font-size:15px;color:#333;">You've been invited to join <strong>${org.name}</strong> on our estimating platform.</p>
+            <p style="margin:0 0 24px;font-size:14px;color:#555;">Click the button below to sign in with your Google account and get started.</p>
+            <div style="text-align:center;">
+              <a href="${appUrl}" style="display:inline-block;background:#e87722;color:#fff;padding:14px 36px;border-radius:6px;font-size:15px;font-weight:600;text-decoration:none;">Sign In to ${org.name}</a>
+            </div>
+            <p style="margin:24px 0 0;font-size:12px;color:#999;">Sign in with <strong>${email}</strong> to access your workspace.</p>
+          </div>
+        </div>`;
+
+        try {
+          await sendGmailEmail({
+            senderName: "Estimator Platform",
+            senderEmail: teamEmail,
+            accessToken: teamAccessToken,
+            refreshToken: teamRefreshToken,
+            to: email,
+            subject: `You're invited to ${org.name} - Estimating Platform`,
+            html,
+          });
+          emailSent = true;
+        } catch (emailErr: any) {
+          console.error("[invite-email]", emailErr.message);
+        }
+      }
+
+      res.json({
+        ok: true,
+        userId: invitedUser.id,
+        email,
+        role: role || "estimator",
+        emailSent,
+        loginUrl: appUrl,
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
