@@ -93,6 +93,8 @@ export default function EstimateForm() {
   const [realDiscountType, setRealDiscountType] = useState<string>("");
   const [realDiscountValue, setRealDiscountValue] = useState(0);
   const [showContactSuggestions, setShowContactSuggestions] = useState(false);
+  const [collapsedItems, setCollapsedItems] = useState<Set<number>>(new Set());
+  const toggleCollapse = (idx: number) => setCollapsedItems(prev => { const n = new Set(prev); n.has(idx) ? n.delete(idx) : n.add(idx); return n; });
   const [showMeetings, setShowMeetings] = useState(false);
   const [selectedMeetingRaw, setSelectedMeetingRaw] = useState<any>(null); // raw calendar event for AI context
 
@@ -1112,6 +1114,9 @@ export default function EstimateForm() {
                     {items.map((item, idx) => (
                       <div key={idx} className="border rounded-lg p-4 space-y-3" data-testid={`line-item-${idx}`}>
                         <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => toggleCollapse(idx)} className="text-muted-foreground hover:text-foreground transition-colors">
+                            {collapsedItems.has(idx) ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                          </button>
                           <span className="text-xs text-muted-foreground font-mono w-6">#{idx + 1}</span>
                           <Select value={item.phaseGroup} onValueChange={v => updateLineItem(idx, "phaseGroup", v)}>
                             <SelectTrigger className="flex-1" data-testid={`select-phase-${idx}`}>
@@ -1134,8 +1139,14 @@ export default function EstimateForm() {
                               <Trash2 className="w-3 h-3" />
                             </Button>
                           </div>
+                          {/* Collapsed summary */}
+                          {collapsedItems.has(idx) && (
+                            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+                              {formatCurrency(item.subCost)} sub
+                            </span>
+                          )}
                         </div>
-                        {item.phaseGroup === "other" && (
+                        {!collapsedItems.has(idx) && item.phaseGroup === "other" && (
                           <Input
                             placeholder="Custom phase name..."
                             value={item.customPhaseLabel}
@@ -1144,7 +1155,7 @@ export default function EstimateForm() {
                             data-testid={`input-custom-phase-${idx}`}
                           />
                         )}
-                        <Textarea
+                        {!collapsedItems.has(idx) && <Textarea
                           placeholder="Scope description (client-facing)..."
                           value={item.scopeDescription}
                           onChange={e => updateLineItem(idx, "scopeDescription", e.target.value)}
@@ -1153,8 +1164,8 @@ export default function EstimateForm() {
                           onInput={e => { const t = e.currentTarget; t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; }}
                           ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
                           data-testid={`input-scope-${idx}`}
-                        />
-                        <div className="flex items-center gap-4">
+                        />}
+                        {!collapsedItems.has(idx) && <div className="flex items-center gap-4">
                           <div className="flex-1">
                             <Label className="text-xs">Sub Cost (internal)</Label>
                             <Input
@@ -1183,9 +1194,9 @@ export default function EstimateForm() {
                               </span>
                             </div>
                           )}
-                        </div>
+                        </div>}
                         {/* Trade Breakdown section for grouped items */}
-                        {item.isGrouped && (
+                        {!collapsedItems.has(idx) && item.isGrouped && (
                           <div className="mt-2 border border-dashed border-primary/30 rounded-md p-3 bg-primary/5 space-y-2" data-testid={`breakdown-section-${idx}`}>
                             <div className="flex items-center justify-between gap-2">
                               <Label className="text-xs font-semibold text-primary flex items-center gap-1 shrink-0">
