@@ -2237,40 +2237,52 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
         return res.status(422).json({ error: "The AI returned malformed data. Please try again." });
       }
 
-      // Fix negative final payment: recalculate milestones if they overshoot
-      if (parsed.milestones && parsed.lineItems) {
-        const totalSub = (parsed.lineItems || []).reduce((s: number, li: any) => s + (li.subCost || 0), 0);
-        const markupMult = 1 + ((parsed.markupRate || currentFormData?.markupRate || 100) / 100);
-        const subtotal = Math.round(totalSub * markupMult * 100) / 100;
-        const allowance = Math.round(subtotal * 0.03 * 100) / 100;
-        const totalClient = Math.round((subtotal + allowance) * 100) / 100;
-
-        const milestoneSum = parsed.milestones.reduce((s: number, m: any) => s + (m.amount || 0), 0);
-        const lastIdx = parsed.milestones.length - 1;
-
-        if (lastIdx >= 0 && (parsed.milestones[lastIdx].amount < 0 || Math.abs(milestoneSum - totalClient) > 1)) {
-          // Recalculate: set final payment = total - sum of all others
-          const othersSum = parsed.milestones.slice(0, lastIdx).reduce((s: number, m: any) => s + (m.amount || 0), 0);
-          parsed.milestones[lastIdx].amount = Math.round((totalClient - othersSum) * 100) / 100;
-
-          // If still negative, scale down all progress payments proportionally
-          if (parsed.milestones[lastIdx].amount < 0) {
-            const deposit = parsed.milestones[0]?.amount || 0;
-            const remaining = totalClient - deposit;
-            const targetRetention = Math.round(totalClient * 0.1 * 100) / 100;
-            const progressBudget = remaining - targetRetention;
-            const progressMilestones = parsed.milestones.slice(1, lastIdx);
-            const progressSum = progressMilestones.reduce((s: number, m: any) => s + (m.amount || 0), 0);
-            if (progressSum > 0) {
-              const scale = progressBudget / progressSum;
-              for (const m of progressMilestones) {
-                m.amount = Math.round((m.amount * scale) / 100) * 100; // round to nearest 100
-              }
-            }
-            const newOthersSum = parsed.milestones.slice(0, lastIdx).reduce((s: number, m: any) => s + (m.amount || 0), 0);
-            parsed.milestones[lastIdx].amount = Math.round((totalClient - newOthersSum) * 100) / 100;
-          }
+      // Fix negative final payment: always validate milestones sum correctly
+      const msArr = parsed.milestones || parsed.paymentMilestones;
+      const liArr = parsed.lineItems || parsed.items;
+      if (msArr && msArr.length > 1) {
+        // Calculate the real total from line items if available
+        let totalClient: number;
+        if (liArr && liArr.length > 0) {
+          const totalSub = liArr.reduce((s: number, li: any) => s + (li.subCost || 0), 0);
+          const markupMult = 1 + ((parsed.markupRate ?? 100) / 100);
+          const subtotal = Math.round(totalSub * markupMult * 100) / 100;
+          totalClient = Math.round((subtotal + subtotal * 0.03) * 100) / 100;
+        } else {
+          // No line items — derive from milestone sum (AI intended total)
+          totalClient = msArr.reduce((s: number, m: any) => s + (m.amount || 0), 0);
         }
+
+        const lastIdx = msArr.length - 1;
+        const deposit = msArr[0]?.amount || 0;
+        const progressMs = msArr.slice(1, lastIdx);
+        const progressSum = progressMs.reduce((s: number, m: any) => s + (m.amount || 0), 0);
+        const finalPayment = totalClient - deposit - progressSum;
+
+        // If progress payments overshoot, scale them down
+        if (finalPayment < 0) {
+          console.log(`[milestone-fix] Negative final: $${finalPayment}. Scaling down progress payments.`);
+          const targetRetention = Math.max(Math.round(totalClient * 0.1), 500);
+          const progressBudget = totalClient - deposit - targetRetention;
+
+          if (progressSum > 0 && progressBudget > 0) {
+            const scale = progressBudget / progressSum;
+            for (const m of progressMs) {
+              m.amount = Math.round((m.amount * scale) / 500) * 500; // round to nearest $500
+            }
+          }
+          const newProgressSum = progressMs.reduce((s: number, m: any) => s + (m.amount || 0), 0);
+          msArr[lastIdx].amount = Math.round((totalClient - deposit - newProgressSum) * 100) / 100;
+        } else {
+          // Just make sure final payment equals remainder
+          msArr[lastIdx].amount = Math.round(finalPayment * 100) / 100;
+        }
+
+        // Overwrite back
+        if (parsed.milestones) parsed.milestones = msArr;
+        if (parsed.paymentMilestones) parsed.paymentMilestones = msArr;
+
+        console.log(`[milestone-fix] Total: $${totalClient}, Deposit: $${deposit}, Progress: $${progressMs.reduce((s: number, m: any) => s + (m.amount || 0), 0)}, Final: $${msArr[lastIdx].amount}`);
       }
 
       // Append to ai_log if estimateId was provided
