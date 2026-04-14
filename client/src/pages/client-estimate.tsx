@@ -337,6 +337,29 @@ export default function ClientEstimate() {
   // Recalculate subtotal from visible client prices
   const subtotal = sortedItems.reduce((sum, i) => sum + i.clientPrice, 0);
 
+  // Calculate discount ratio for line item display
+  const eAny = estimate as any;
+  const hasDiscount = (eAny.apparentDiscountType && eAny.apparentDiscountValue > 0) || (eAny.realDiscountType && eAny.realDiscountValue > 0);
+  let discountRatio = 1; // ratio of discounted price to original
+  if (hasDiscount) {
+    let originalTotal = estimate.totalClientPrice;
+    if (eAny.apparentDiscountType && eAny.apparentDiscountValue > 0) {
+      if (eAny.apparentDiscountType === "percent") {
+        originalTotal = Math.round(estimate.totalClientPrice / (1 - eAny.apparentDiscountValue / 100) * 100) / 100;
+      } else {
+        originalTotal = estimate.totalClientPrice + eAny.apparentDiscountValue;
+      }
+    }
+    if (eAny.realDiscountType && eAny.realDiscountValue > 0 && !(eAny.apparentDiscountType && eAny.apparentDiscountValue > 0)) {
+      if (eAny.realDiscountType === "percent") {
+        originalTotal = Math.round(estimate.totalClientPrice / (1 - eAny.realDiscountValue / 100) * 100) / 100;
+      } else {
+        originalTotal = estimate.totalClientPrice + eAny.realDiscountValue;
+      }
+    }
+    discountRatio = originalTotal > 0 ? estimate.totalClientPrice / originalTotal : 1;
+  }
+
   return (
     <>
       {/* ── SECTION 1: Cover Page ─────────────────────────────────────────── */}
@@ -408,11 +431,19 @@ export default function ClientEstimate() {
                 <Card key={idx} className="bg-white dark:bg-card overflow-hidden" data-testid={`scope-section-${idx}`}>
                   <div className="flex items-center justify-between p-4 bg-muted/30">
                     <h3 className="font-semibold text-sm">{section.label}</h3>
-                    {section.collectivePrice !== null ? (
-                      <span className="font-mono text-sm font-semibold">{formatCurrency(section.collectivePrice)}</span>
-                    ) : (
-                      <span className="font-mono text-sm font-semibold">{formatCurrency(section.items[0].clientPrice)}</span>
-                    )}
+                    {(() => {
+                      const originalPrice = section.collectivePrice !== null ? section.collectivePrice : section.items[0].clientPrice;
+                      const discountedPrice = Math.round(originalPrice * discountRatio * 100) / 100;
+                      if (hasDiscount && discountRatio < 1) {
+                        return (
+                          <div className="text-right">
+                            <span className="font-mono text-xs text-muted-foreground line-through mr-2">{formatCurrency(originalPrice)}</span>
+                            <span className="font-mono text-sm font-semibold text-green-600 dark:text-green-400">{formatCurrency(discountedPrice)}</span>
+                          </div>
+                        );
+                      }
+                      return <span className="font-mono text-sm font-semibold">{formatCurrency(originalPrice)}</span>;
+                    })()}
                   </div>
                   <CardContent className="pt-3 pb-4">
                     {section.items.map((item, itemIdx) => (
