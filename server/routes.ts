@@ -1919,8 +1919,8 @@ HVAC (LABOR ONLY — equipment separate):
 === PAYMENT SCHEDULE RULES ===
 - Always top-heavy (front-load payments)
 - First milestone is always "Deposit upon acceptance" — amount should be lesser of $1,000 or 10% of total CLIENT price
-- Calculate: totalClientPrice = (sum of all subCosts * 2) * 1.03
-- Then set deposit = min(1000, totalClientPrice * 0.10)
+- DO NOT calculate the total yourself. The system provides the exact totalClientPrice. Use THAT number.
+- Deposit = min(1000, totalClientPrice * 0.10)
 
 PROGRESS PAYMENTS:
 - NEVER group phases together in a single payment. Each trade/phase gets its OWN separate payment milestone.
@@ -1956,7 +1956,8 @@ RETENTION (FINAL PAYMENT) RULE:
 - Label the final milestone as: "Final Walkthrough & Project Closeout (10% Retention)" or similar
 - Retention is released upon substantial completion — not held for punch list items
 
-Milestone amounts MUST sum to exactly totalClientPrice. The retention absorbs all rounding differences.
+Milestone amounts MUST sum to EXACTLY the totalClientPrice provided by the system. The retention absorbs all rounding differences.
+CRITICAL: If you sum up your milestone amounts and get MORE than totalClientPrice, the final payment goes NEGATIVE which is invalid. Always verify: sum of all milestones == totalClientPrice. Start by subtracting the deposit from the total, then distribute the remainder across progress payments + retention.
 
 === SCOPE WRITING RULES ===
 - Write scope descriptions in bullet point format using bullet character •
@@ -2234,6 +2235,42 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
       } catch (parseErr: any) {
         console.error("[ai/generate] JSON parse error:", parseErr.message, responseText.slice(0, 500));
         return res.status(422).json({ error: "The AI returned malformed data. Please try again." });
+      }
+
+      // Fix negative final payment: recalculate milestones if they overshoot
+      if (parsed.milestones && parsed.lineItems) {
+        const totalSub = (parsed.lineItems || []).reduce((s: number, li: any) => s + (li.subCost || 0), 0);
+        const markupMult = 1 + ((parsed.markupRate || currentFormData?.markupRate || 100) / 100);
+        const subtotal = Math.round(totalSub * markupMult * 100) / 100;
+        const allowance = Math.round(subtotal * 0.03 * 100) / 100;
+        const totalClient = Math.round((subtotal + allowance) * 100) / 100;
+
+        const milestoneSum = parsed.milestones.reduce((s: number, m: any) => s + (m.amount || 0), 0);
+        const lastIdx = parsed.milestones.length - 1;
+
+        if (lastIdx >= 0 && (parsed.milestones[lastIdx].amount < 0 || Math.abs(milestoneSum - totalClient) > 1)) {
+          // Recalculate: set final payment = total - sum of all others
+          const othersSum = parsed.milestones.slice(0, lastIdx).reduce((s: number, m: any) => s + (m.amount || 0), 0);
+          parsed.milestones[lastIdx].amount = Math.round((totalClient - othersSum) * 100) / 100;
+
+          // If still negative, scale down all progress payments proportionally
+          if (parsed.milestones[lastIdx].amount < 0) {
+            const deposit = parsed.milestones[0]?.amount || 0;
+            const remaining = totalClient - deposit;
+            const targetRetention = Math.round(totalClient * 0.1 * 100) / 100;
+            const progressBudget = remaining - targetRetention;
+            const progressMilestones = parsed.milestones.slice(1, lastIdx);
+            const progressSum = progressMilestones.reduce((s: number, m: any) => s + (m.amount || 0), 0);
+            if (progressSum > 0) {
+              const scale = progressBudget / progressSum;
+              for (const m of progressMilestones) {
+                m.amount = Math.round((m.amount * scale) / 100) * 100; // round to nearest 100
+              }
+            }
+            const newOthersSum = parsed.milestones.slice(0, lastIdx).reduce((s: number, m: any) => s + (m.amount || 0), 0);
+            parsed.milestones[lastIdx].amount = Math.round((totalClient - newOthersSum) * 100) / 100;
+          }
+        }
       }
 
       // Append to ai_log if estimateId was provided
