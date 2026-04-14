@@ -122,7 +122,8 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   // Sales Reps
-  async getSalesReps(): Promise<SalesRep[]> {
+  async getSalesReps(orgId?: number): Promise<SalesRep[]> {
+    if (orgId) return db.select().from(salesReps).where(eq(salesReps.orgId, orgId));
     return db.select().from(salesReps);
   }
 
@@ -137,7 +138,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Estimates
-  async getEstimates(createdByUserId?: number): Promise<Estimate[]> {
+  async getEstimates(createdByUserId?: number, orgId?: number): Promise<Estimate[]> {
     if (createdByUserId !== undefined) {
       return db.select().from(estimates)
         .where(eq(estimates.createdByUserId, createdByUserId))
@@ -302,17 +303,15 @@ export class DatabaseStorage implements IStorage {
     })));
   }
 
-  async getRecentPricing(trade: string, limit = 10): Promise<PricingHistory[]> {
-    return db.select().from(pricingHistory)
-      .where(eq(pricingHistory.trade, trade))
-      .orderBy(desc(pricingHistory.createdAt))
-      .limit(limit);
+  async getRecentPricing(trade: string, limit = 10, orgId?: number): Promise<PricingHistory[]> {
+    const conditions: any[] = [eq(pricingHistory.trade, trade)];
+    if (orgId) conditions.push(eq(pricingHistory.orgId, orgId));
+    return db.select().from(pricingHistory).where(and(...conditions)).orderBy(desc(pricingHistory.createdAt)).limit(limit);
   }
 
-  async getAllRecentPricing(limit = 100): Promise<PricingHistory[]> {
-    return db.select().from(pricingHistory)
-      .orderBy(desc(pricingHistory.createdAt))
-      .limit(limit);
+  async getAllRecentPricing(limit = 100, orgId?: number): Promise<PricingHistory[]> {
+    if (orgId) return db.select().from(pricingHistory).where(eq(pricingHistory.orgId, orgId)).orderBy(desc(pricingHistory.createdAt)).limit(limit);
+    return db.select().from(pricingHistory).orderBy(desc(pricingHistory.createdAt)).limit(limit);
   }
 
   // Purchase Orders
@@ -326,7 +325,7 @@ export class DatabaseStorage implements IStorage {
     return rows[0];
   }
 
-  async getPurchaseOrders(estimateId?: number): Promise<PurchaseOrder[]> {
+  async getPurchaseOrders(estimateId?: number, orgId?: number): Promise<PurchaseOrder[]> {
     if (estimateId !== undefined) {
       return db.select().from(purchaseOrders)
         .where(eq(purchaseOrders.estimateId, estimateId))
@@ -427,15 +426,15 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(emailLogs.sentAt));
   }
 
-  async getAllEmails(limit = 100): Promise<EmailLog[]> {
-    return db.select().from(emailLogs)
-      .orderBy(desc(emailLogs.sentAt))
-      .limit(limit);
+  async getAllEmails(limit = 100, orgId?: number): Promise<EmailLog[]> {
+    if (orgId) return db.select().from(emailLogs).where(eq(emailLogs.orgId, orgId)).orderBy(desc(emailLogs.sentAt)).limit(limit);
+    return db.select().from(emailLogs).orderBy(desc(emailLogs.sentAt)).limit(limit);
   }
 
-  async getUnreadEmailCount(): Promise<number> {
-    const rows = await db.select().from(emailLogs)
-      .where(and(eq(emailLogs.direction, "inbound"), eq(emailLogs.isRead, false)));
+  async getUnreadEmailCount(orgId?: number): Promise<number> {
+    const conditions: any[] = [eq(emailLogs.direction, "inbound"), eq(emailLogs.isRead, false)];
+    if (orgId) conditions.push(eq(emailLogs.orgId, orgId));
+    const rows = await db.select().from(emailLogs).where(and(...conditions));
     return rows.length;
   }
 
@@ -487,7 +486,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Contacts
-  async getContacts(): Promise<Contact[]> {
+  async getContacts(orgId?: number): Promise<Contact[]> {
+    if (orgId) return db.select().from(contacts).where(eq(contacts.orgId, orgId)).orderBy(contacts.name);
     return db.select().from(contacts).orderBy(contacts.name);
   }
 
@@ -509,8 +509,8 @@ export class DatabaseStorage implements IStorage {
     await db.delete(contacts).where(eq(contacts.id, id));
   }
 
-  async searchContacts(query: string): Promise<Contact[]> {
-    const all = await this.getContacts();
+  async searchContacts(query: string, orgId?: number): Promise<Contact[]> {
+    const all = await this.getContacts(orgId);
     const q = query.toLowerCase();
     return all.filter(c =>
       c.name.toLowerCase().includes(q) ||
@@ -520,8 +520,8 @@ export class DatabaseStorage implements IStorage {
     );
   }
 
-  async getEstimatesForContact(contactName: string, contactEmail?: string): Promise<Estimate[]> {
-    const all = await this.getEstimates();
+  async getEstimatesForContact(contactName: string, contactEmail?: string, orgId?: number): Promise<Estimate[]> {
+    const all = await this.getEstimates(undefined, orgId);
     return all.filter(e =>
       e.clientName.toLowerCase() === contactName.toLowerCase() ||
       (contactEmail && e.clientEmail?.toLowerCase() === contactEmail.toLowerCase())
@@ -540,10 +540,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(estimateMessages.createdAt);
   }
 
-  async getUnreadClientMessages(): Promise<EstimateMessage[]> {
-    return db.select().from(estimateMessages)
-      .where(and(eq(estimateMessages.senderType, "client"), eq(estimateMessages.isRead, false)))
-      .orderBy(desc(estimateMessages.createdAt));
+  async getUnreadClientMessages(orgId?: number): Promise<EstimateMessage[]> {
+    const conditions: any[] = [eq(estimateMessages.senderType, "client"), eq(estimateMessages.isRead, false)];
+    if (orgId) conditions.push(eq(estimateMessages.orgId, orgId));
+    return db.select().from(estimateMessages).where(and(...conditions)).orderBy(desc(estimateMessages.createdAt));
   }
 
   async markMessagesRead(estimateId: number, senderType: string): Promise<void> {

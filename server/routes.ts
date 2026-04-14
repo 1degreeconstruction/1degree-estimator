@@ -78,10 +78,12 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
   const token = authHeader.slice(7);
   try {
-    const payload = jwt.verify(token, JWT_SECRET) as { userId: number; email: string; role: string };
+    const payload = jwt.verify(token, JWT_SECRET) as { userId: number; email: string; role: string; orgId?: number; orgRole?: string };
     const user = await storage.getUser(payload.userId);
     if (!user || !user.isActive) return res.status(401).json({ error: "Unauthorized" });
     req.user = user as Express.User;
+    (req as any).orgId = payload.orgId || 1;
+    (req as any).orgRole = payload.orgRole || user.role;
     return next();
   } catch {
     return res.status(401).json({ error: "Invalid token" });
@@ -141,7 +143,7 @@ async function generateEstimateNumber(clientName: string, projectAddress: string
   const clientInit = getClientInitials(clientName);
 
   // Count existing estimates for this client
-  const existing = await storage.getEstimates();
+  const existing = await storage.getEstimates(undefined, (req as any).orgId);
   const clientEstimates = existing.filter(e =>
     e.clientName?.toLowerCase() === clientName.toLowerCase()
   );
@@ -248,7 +250,7 @@ export async function registerRoutes(
 
   app.get("/auth/google/callback",
     passport.authenticate("google", { failureRedirect: "/login", session: false }),
-    (req, res) => {
+    async (req, res) => {
       const user = req.user as Express.User;
       const frontendUrl = process.env.FRONTEND_URL || "https://1degree-estimator.vercel.app";
 
@@ -256,9 +258,18 @@ export async function registerRoutes(
         return res.redirect(`${frontendUrl}/#/?error=pending_approval`);
       }
 
+      // Look up org membership for JWT
+      const memRows = await db.execute(sql`
+        SELECT org_id, role FROM org_memberships
+        WHERE user_id = ${user.id} AND is_active = true
+        ORDER BY created_at LIMIT 1
+      `);
+      const orgId = memRows.rows.length > 0 ? (memRows.rows[0] as any).org_id : 1;
+      const orgRole = memRows.rows.length > 0 ? (memRows.rows[0] as any).role : user.role;
+
       // Issue a JWT valid for 7 days
       const token = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role },
+        { userId: user.id, email: user.email, role: user.role, orgId, orgRole },
         JWT_SECRET,
         { expiresIn: "7d" }
       );
@@ -299,7 +310,7 @@ export async function registerRoutes(
   // Sales Reps
   app.get("/api/sales-reps", async (_req, res) => {
     try {
-      const reps = await storage.getSalesReps();
+      const reps = await storage.getSalesReps((req as any).orgId);
       res.json(reps);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -313,7 +324,7 @@ export async function registerRoutes(
       const userId = mine && req.user ? (req.user as Express.User).id : undefined;
 
       const estimatesList = await storage.getEstimates(userId);
-      const reps = await storage.getSalesReps();
+      const reps = await storage.getSalesReps((req as any).orgId);
       const usersList = await storage.listUsers();
 
       const enriched = estimatesList.map(e => ({
@@ -573,14 +584,14 @@ Rules:
   // ─── Contacts / Client Directory ───────────────────────────────────────────
 
   app.get("/api/contacts", requireAuth as any, async (_req: Request, res: Response) => {
-    try { res.json(await storage.getContacts()); }
+    try { res.json(await storage.getContacts((req as any).orgId)); }
     catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
   app.get("/api/contacts/search", requireAuth as any, async (req: Request, res: Response) => {
     try {
       const q = (req.query.q as string) || "";
-      res.json(await storage.searchContacts(q));
+      res.json(await storage.searchContacts(q, (req as any).orgId));
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
@@ -588,7 +599,7 @@ Rules:
     try {
       const contact = await storage.getContact(parseInt(req.params.id));
       if (!contact) return res.status(404).json({ error: "Contact not found" });
-      const estimates = await storage.getEstimatesForContact(contact.name, contact.email || undefined);
+      const estimates = await storage.getEstimatesForContact(contact.name, contact.email || undefined, (req as any).orgId);
       res.json({ contact, estimates });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
@@ -685,7 +696,7 @@ Rules:
         const teamRefreshToken = await storage.getConfig("team_refresh_token");
         const teamEmail = await storage.getConfig("team_gmail_email");
         if (teamAccessToken && teamEmail) {
-          const reps = await storage.getSalesReps();
+          const reps = await storage.getSalesReps((req as any).orgId);
           const appUrl = process.env.APP_URL || "https://1degree-estimator.vercel.app";
           const chatUrl = `${appUrl}/#/chat`;
           const clientLabel = senderName || estimate.clientName || "A client";
@@ -801,7 +812,7 @@ Rules:
   // GET unread client message count (for team sidebar badge)
   app.get("/api/messages/unread", requireAuth as any, async (req: Request, res: Response) => {
     try {
-      const unread = await storage.getUnreadClientMessages();
+      const unread = await storage.getUnreadClientMessages((req as any).orgId);
       res.json({ count: unread.length, messages: unread });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -968,11 +979,11 @@ Rules:
   app.get("/api/inbox", requireAuth as any, async (req: Request, res: Response) => {
     try {
       const limit = parseInt(req.query.limit as string) || 100;
-      const emails = await storage.getAllEmails(limit);
-      const unreadCount = await storage.getUnreadEmailCount();
+      const emails = await storage.getAllEmails(limit, (req as any).orgId);
+      const unreadCount = await storage.getUnreadEmailCount((req as any).orgId);
 
       // Build estimate lookup for client names
-      const allEstimates = await storage.getEstimates();
+      const allEstimates = await storage.getEstimates(undefined, (req as any).orgId);
       const estMap: Record<number, { clientName: string; estimateNumber: string }> = {};
       for (const e of allEstimates) {
         estMap[e.id] = { clientName: e.clientName, estimateNumber: e.estimateNumber };
@@ -999,7 +1010,7 @@ Rules:
         const estNumMatch = msg.subject.match(/([A-Z0-9]+-[A-Z]+-\d{8}-\d+)/i);
         let estimateId: number | null = null;
         if (estNumMatch) {
-          const est = await storage.getEstimates();
+          const est = await storage.getEstimates(undefined, (req as any).orgId);
           const matched = est.find(e => e.estimateNumber === estNumMatch[1]);
           if (matched) estimateId = matched.id;
         }
@@ -1062,7 +1073,7 @@ Rules:
   app.get("/api/inbox/status", requireAuth as any, async (req: Request, res: Response) => {
     try {
       const email = await storage.getConfig("team_gmail_email");
-      const unread = await storage.getUnreadEmailCount();
+      const unread = await storage.getUnreadEmailCount((req as any).orgId);
       res.json({ connected: !!email, connectedAs: email, unreadCount: unread });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1180,7 +1191,7 @@ Rules:
         : "No pricing history available yet.";
 
       // Gather recent 20 projects
-      const allEstimates = await storage.getEstimates();
+      const allEstimates = await storage.getEstimates(undefined, (req as any).orgId);
       const recentEstimates = allEstimates.slice(0, 20);
       const projectContext = recentEstimates.length > 0
         ? recentEstimates.map(e => {
@@ -1348,6 +1359,7 @@ RULES:
       const currentUserId = req.user ? (req.user as Express.User).id : null;
 
       const estimate = await storage.createEstimate({
+        orgId: (req as any).orgId || 1,
         estimateNumber,
         uniqueId,
         clientName: estimateData.clientName || "",
@@ -1479,7 +1491,7 @@ RULES:
 
       // Auto-save client to contacts directory
       if (estimateData.clientName) {
-        const existing = await storage.searchContacts(estimateData.clientName);
+        const existing = await storage.searchContacts(estimateData.clientName, (req as any).orgId);
         if (!existing.find(c => c.name.toLowerCase() === estimateData.clientName.toLowerCase())) {
           await storage.createContact({
             name: estimateData.clientName,
@@ -2745,7 +2757,7 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
         }
         return res.json(merged);
       }
-      const pos = await storage.getPurchaseOrders();
+      const pos = await storage.getPurchaseOrders(undefined, (req as any).orgId);
       res.json(pos);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
