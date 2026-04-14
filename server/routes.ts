@@ -524,12 +524,28 @@ Return ONLY a JSON object: {"milestones": [{"name": "...", "amount": 1234}]}`
 
       const parsed = JSON.parse(jsonMatch[0]);
 
-      // Safety: ensure sum matches
-      if (parsed.milestones) {
-        const sum = parsed.milestones.reduce((s: number, m: any) => s + (m.amount || 0), 0);
-        const diff = totalClientPrice - sum;
-        if (Math.abs(diff) > 0.01 && parsed.milestones.length > 0) {
-          parsed.milestones[parsed.milestones.length - 1].amount += Math.round(diff * 100) / 100;
+      // Safety: fix negatives and ensure sum matches
+      if (parsed.milestones && parsed.milestones.length > 1) {
+        const lastIdx = parsed.milestones.length - 1;
+        const deposit = parsed.milestones[0]?.amount || 0;
+        const progressMs = parsed.milestones.slice(1, lastIdx);
+        const progressSum = progressMs.reduce((s: number, m: any) => s + (m.amount || 0), 0);
+        const finalPayment = totalClientPrice - deposit - progressSum;
+
+        if (finalPayment < 0) {
+          // Scale down progress payments
+          const targetRetention = Math.max(Math.round(totalClientPrice * 0.1), 500);
+          const progressBudget = totalClientPrice - deposit - targetRetention;
+          if (progressSum > 0 && progressBudget > 0) {
+            const scale = progressBudget / progressSum;
+            for (const m of progressMs) {
+              m.amount = Math.round((m.amount * scale) / 500) * 500;
+            }
+          }
+          const newProgressSum = progressMs.reduce((s: number, m: any) => s + (m.amount || 0), 0);
+          parsed.milestones[lastIdx].amount = Math.round((totalClientPrice - deposit - newProgressSum) * 100) / 100;
+        } else {
+          parsed.milestones[lastIdx].amount = Math.round(finalPayment * 100) / 100;
         }
       }
 
