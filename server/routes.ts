@@ -322,7 +322,7 @@ export async function registerRoutes(
   });
 
   // Sales Reps
-  app.get("/api/sales-reps", async (_req, res) => {
+  app.get("/api/sales-reps", async (req, res) => {
     try {
       const reps = await storage.getSalesReps((req as any).orgId);
       res.json(reps);
@@ -608,7 +608,7 @@ Rules:
 
   // ─── Contacts / Client Directory ───────────────────────────────────────────
 
-  app.get("/api/contacts", requireAuth as any, async (_req: Request, res: Response) => {
+  app.get("/api/contacts", requireAuth as any, async (req: Request, res: Response) => {
     try { res.json(await storage.getContacts((req as any).orgId)); }
     catch (err: any) { res.status(500).json({ error: err.message }); }
   });
@@ -3156,7 +3156,7 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
       if (!user) {
         // Pre-create a placeholder user
         user = await storage.createUser({
-          googleId: "",
+          googleId: `placeholder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           email,
           name: email.split("@")[0],
           role: role || "estimator",
