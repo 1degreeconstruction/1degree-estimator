@@ -508,32 +508,39 @@ export default function ClientEstimate() {
               <CardContent className="pt-5">
                 <h2 className="font-display text-lg font-bold mb-4">Payment Schedule</h2>
                 <div className="space-y-3">
-                  {estimate.milestones.sort((a, b) => a.sortOrder - b.sortOrder).map((m, idx) => {
-                    const milestoneTotal = estimate.milestones.reduce((s, ms) => s + ms.amount, 0);
-                    const share = milestoneTotal > 0 ? m.amount / milestoneTotal : 0;
-                    const milestoneDiscount = discount ? Math.round(discount.totalSavings * share * 100) / 100 : 0;
-                    const netAmount = Math.round((m.amount - milestoneDiscount) * 100) / 100;
-                    return (
-                      <div key={m.id} className="py-2 border-b last:border-0" data-testid={`payment-milestone-${idx}`}>
-                        <div className="flex justify-between text-sm">
-                          <span>{m.milestoneName}</span>
-                          {discount && milestoneDiscount > 0 ? (
-                            <div className="text-right">
-                              <span className="font-mono text-xs text-muted-foreground line-through mr-2">{formatCurrency(m.amount)}</span>
-                              <span className="font-mono font-medium text-green-600 dark:text-green-400">{formatCurrency(netAmount)}</span>
+                  {(() => {
+                    const sorted = [...estimate.milestones].sort((a, b) => a.sortOrder - b.sortOrder);
+                    // Retention is always the last milestone — discount applies to all others
+                    const retentionIdx = sorted.length - 1;
+                    const nonRetentionTotal = sorted.slice(0, retentionIdx).reduce((s, ms) => s + ms.amount, 0);
+
+                    return sorted.map((m, idx) => {
+                      const isRetention = idx === retentionIdx;
+                      const share = !isRetention && nonRetentionTotal > 0 ? m.amount / nonRetentionTotal : 0;
+                      const milestoneDiscount = discount && !isRetention ? Math.round(discount.totalSavings * share * 100) / 100 : 0;
+                      const netAmount = Math.round((m.amount - milestoneDiscount) * 100) / 100;
+                      return (
+                        <div key={m.id} className="py-2 border-b last:border-0" data-testid={`payment-milestone-${idx}`}>
+                          <div className="flex justify-between text-sm">
+                            <span>{m.milestoneName}</span>
+                            {discount && milestoneDiscount > 0 ? (
+                              <div className="text-right">
+                                <span className="font-mono text-xs text-muted-foreground line-through mr-2">{formatCurrency(m.amount)}</span>
+                                <span className="font-mono font-medium text-green-600 dark:text-green-400">{formatCurrency(netAmount)}</span>
+                              </div>
+                            ) : (
+                              <span className="font-mono font-medium">{formatCurrency(m.amount)}</span>
+                            )}
+                          </div>
+                          {discount && milestoneDiscount > 0 && (
+                            <div className="flex justify-end mt-0.5">
+                              <span className="text-[10px] text-green-600 dark:text-green-400">-{formatCurrency(milestoneDiscount)} discount</span>
                             </div>
-                          ) : (
-                            <span className="font-mono font-medium">{formatCurrency(m.amount)}</span>
                           )}
                         </div>
-                        {discount && milestoneDiscount > 0 && (
-                          <div className="flex justify-end mt-0.5">
-                            <span className="text-[10px] text-green-600 dark:text-green-400">-{formatCurrency(milestoneDiscount)} discount</span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               </CardContent>
             </Card>
