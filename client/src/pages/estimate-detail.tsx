@@ -278,7 +278,7 @@ export default function EstimateDetailPage() {
 
   return (
     <AdminLayout>
-      <div className="p-6 max-w-5xl mx-auto space-y-6 pb-16">
+      <div className="p-6 space-y-6 pb-16">
         {/* Header */}
         <div className="flex items-start justify-between gap-4" data-testid="detail-header">
           <div>
@@ -596,7 +596,7 @@ export default function EstimateDetailPage() {
                     const progressTotal = sorted.slice(1, retentionIdx).reduce((s, ms) => s + ms.amount, 0);
 
                     return (
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                         {sorted.map((m, idx) => {
                           const isDeposit = idx === 0;
                           const isRetention = idx === retentionIdx;
@@ -605,16 +605,16 @@ export default function EstimateDetailPage() {
                           const mDisc = hasDisc && isProgress ? Math.round(discSavings * share * 100) / 100 : 0;
                           const net = Math.round((m.amount - mDisc) * 100) / 100;
                           return (
-                            <div key={m.id} className="flex justify-between text-sm" data-testid={`milestone-row-${idx}`}>
-                              <span className="text-muted-foreground">{m.milestoneName}</span>
-                              {mDisc > 0 ? (
-                                <div className="text-right">
-                                  <span className="font-mono text-xs text-muted-foreground line-through mr-2">{formatCurrency(m.amount)}</span>
-                                  <span className="font-mono text-green-500">{formatCurrency(net)}</span>
-                                  <span className="text-[10px] text-green-500/70 ml-1">(-{formatCurrency(mDisc)})</span>
+                            <div key={m.id} className="py-1.5 border-b border-border/50 last:border-0" data-testid={`milestone-row-${idx}`}>
+                              <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{m.milestoneName}</span>
+                                <span className={`font-mono tabular-nums text-right w-28 ${mDisc > 0 ? "line-through text-muted-foreground text-xs" : ""}`}>{formatCurrency(m.amount)}</span>
+                              </div>
+                              {mDisc > 0 && (
+                                <div className="flex justify-between items-center mt-0.5">
+                                  <span className="text-[10px] text-green-500 pl-4">-{formatCurrency(mDisc)} discount</span>
+                                  <span className="font-mono tabular-nums text-right w-28 text-sm text-green-500 font-medium">{formatCurrency(net)}</span>
                                 </div>
-                              ) : (
-                                <span className="font-mono">{formatCurrency(m.amount)}</span>
                               )}
                             </div>
                           );
