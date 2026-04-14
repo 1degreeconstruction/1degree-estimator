@@ -2950,6 +2950,79 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
     }
   });
 
+  // ─── Multi-Tenant: Org Routes (read-only, Phase 1) ───────────────────────
+
+  // GET /api/platform/me — current user's org context
+  app.get("/api/platform/me", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user as User;
+      // Check platform admin
+      const paRows = await db.execute(sql`SELECT id FROM platform_admins WHERE user_id = ${user.id}`);
+      const isPlatformAdmin = paRows.rows.length > 0;
+
+      // Get org memberships
+      const memRows = await db.execute(sql`
+        SELECT m.org_id, m.role, o.name, o.slug
+        FROM org_memberships m JOIN organizations o ON o.id = m.org_id
+        WHERE m.user_id = ${user.id} AND m.is_active = true AND o.is_active = true
+      `);
+
+      res.json({
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        isPlatformAdmin,
+        memberships: memRows.rows,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/platform/orgs — list all orgs (platform admins only)
+  app.get("/api/platform/orgs", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user as User;
+      const paRows = await db.execute(sql`SELECT id FROM platform_admins WHERE user_id = ${user.id}`);
+      if (paRows.rows.length === 0) return res.status(403).json({ error: "Platform admin only" });
+
+      const orgs = await db.execute(sql`
+        SELECT o.*, (SELECT COUNT(*) FROM org_memberships m WHERE m.org_id = o.id AND m.is_active = true) as member_count
+        FROM organizations o ORDER BY o.created_at
+      `);
+      res.json(orgs.rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/platform/orgs/:id/members — list members of an org (platform admin or org admin)
+  app.get("/api/platform/orgs/:id/members", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user as User;
+      const orgId = parseInt(req.params.id);
+
+      // Check access: platform admin OR org admin
+      const paRows = await db.execute(sql`SELECT id FROM platform_admins WHERE user_id = ${user.id}`);
+      const isPlatformAdmin = paRows.rows.length > 0;
+      if (!isPlatformAdmin) {
+        const memCheck = await db.execute(sql`SELECT role FROM org_memberships WHERE user_id = ${user.id} AND org_id = ${orgId} AND is_active = true`);
+        if (memCheck.rows.length === 0 || (memCheck.rows[0] as any).role !== "org_admin") {
+          return res.status(403).json({ error: "Not authorized for this organization" });
+        }
+      }
+
+      const members = await db.execute(sql`
+        SELECT m.id, m.user_id, m.role, m.is_active, m.created_at, u.name, u.email, u.avatar_url
+        FROM org_memberships m JOIN users u ON u.id = m.user_id
+        WHERE m.org_id = ${orgId} ORDER BY m.created_at
+      `);
+      res.json(members.rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ─── Error Log Routes ──────────────────────────────────────────────────────
 
   // GET /api/admin/usage — usage dashboard stats

@@ -303,3 +303,49 @@ export const STATUS_OPTIONS = [
   { value: "expired", label: "Expired", color: "red" },
   { value: "declined", label: "Declined", color: "red" },
 ] as const;
+
+// ─── Multi-Tenant: Organizations ─────────────────────────────────────────────
+
+export const organizations = pgTable("organizations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  logoUrl: text("logo_url"),
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  zip: text("zip"),
+  phone: text("phone"),
+  email: text("email"),
+  website: text("website"),
+  licenseNumber: text("license_number"),
+  settings: jsonb("settings"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true });
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type Organization = typeof organizations.$inferSelect;
+
+export const orgMemberships = pgTable("org_memberships", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  orgId: integer("org_id").notNull(),
+  role: text("role").notNull().default("estimator"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertOrgMembershipSchema = createInsertSchema(orgMemberships).omit({ id: true });
+export type InsertOrgMembership = z.infer<typeof insertOrgMembershipSchema>;
+export type OrgMembership = typeof orgMemberships.$inferSelect;
+
+export const platformAdmins = pgTable("platform_admins", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique(),
+  email: text("email").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type PlatformAdmin = typeof platformAdmins.$inferSelect;
