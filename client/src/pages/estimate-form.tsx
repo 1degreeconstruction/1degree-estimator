@@ -1819,6 +1819,16 @@ export default function EstimateForm() {
               <span className="font-mono" data-testid="text-allowance">{formatCurrency(calculations.allowance)}</span>
             </div>
             <Separator orientation="vertical" className="h-6" />
+            {calculations.clientVisibleSavings > 0 && (
+              <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+                <span className="text-muted-foreground">Was:</span>
+                <span className="font-mono line-through text-muted-foreground">{formatCurrency(calculations.clientVisibleOriginal)}</span>
+                <span className="font-mono font-semibold text-green-500">-{formatCurrency(calculations.clientVisibleSavings)}</span>
+                <span className="text-[10px] font-semibold text-green-500 bg-green-500/10 px-1 rounded">
+                  {calculations.clientVisibleOriginal > 0 ? (Math.round((calculations.clientVisibleSavings / calculations.clientVisibleOriginal) * 1000) / 10) % 1 === 0 ? Math.round((calculations.clientVisibleSavings / calculations.clientVisibleOriginal) * 100) : (Math.round((calculations.clientVisibleSavings / calculations.clientVisibleOriginal) * 1000) / 10).toFixed(1) : 0}% off
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-1 whitespace-nowrap">
               <span className="text-sm font-semibold">Total:</span>
               <span className="text-sm font-mono font-bold text-primary" data-testid="text-total-client-price">{formatCurrency(calculations.total)}</span>
