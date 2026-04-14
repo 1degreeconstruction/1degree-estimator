@@ -510,14 +510,16 @@ export default function ClientEstimate() {
                 <div className="space-y-3">
                   {(() => {
                     const sorted = [...estimate.milestones].sort((a, b) => a.sortOrder - b.sortOrder);
-                    // Retention is always the last milestone — discount applies to all others
+                    // Discount only applies to progress payments (not deposit or retention)
                     const retentionIdx = sorted.length - 1;
-                    const nonRetentionTotal = sorted.slice(0, retentionIdx).reduce((s, ms) => s + ms.amount, 0);
+                    const progressTotal = sorted.slice(1, retentionIdx).reduce((s, ms) => s + ms.amount, 0);
 
                     return sorted.map((m, idx) => {
+                      const isDeposit = idx === 0;
                       const isRetention = idx === retentionIdx;
-                      const share = !isRetention && nonRetentionTotal > 0 ? m.amount / nonRetentionTotal : 0;
-                      const milestoneDiscount = discount && !isRetention ? Math.round(discount.totalSavings * share * 100) / 100 : 0;
+                      const isProgress = !isDeposit && !isRetention;
+                      const share = isProgress && progressTotal > 0 ? m.amount / progressTotal : 0;
+                      const milestoneDiscount = discount && isProgress ? Math.round(discount.totalSavings * share * 100) / 100 : 0;
                       const netAmount = Math.round((m.amount - milestoneDiscount) * 100) / 100;
                       return (
                         <div key={m.id} className="py-2 border-b last:border-0" data-testid={`payment-milestone-${idx}`}>

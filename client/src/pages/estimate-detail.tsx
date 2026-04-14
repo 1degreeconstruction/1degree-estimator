@@ -592,14 +592,17 @@ export default function EstimateDetailPage() {
                     }
                     const sorted = [...estimate.milestones].sort((a, b) => a.sortOrder - b.sortOrder);
                     const retentionIdx = sorted.length - 1;
-                    const nonRetentionTotal = sorted.slice(0, retentionIdx).reduce((s, ms) => s + ms.amount, 0);
+                    // Discount only applies to progress payments (not deposit or retention)
+                    const progressTotal = sorted.slice(1, retentionIdx).reduce((s, ms) => s + ms.amount, 0);
 
                     return (
                       <div className="space-y-2">
                         {sorted.map((m, idx) => {
+                          const isDeposit = idx === 0;
                           const isRetention = idx === retentionIdx;
-                          const share = !isRetention && nonRetentionTotal > 0 ? m.amount / nonRetentionTotal : 0;
-                          const mDisc = hasDisc && !isRetention ? Math.round(discSavings * share * 100) / 100 : 0;
+                          const isProgress = !isDeposit && !isRetention;
+                          const share = isProgress && progressTotal > 0 ? m.amount / progressTotal : 0;
+                          const mDisc = hasDisc && isProgress ? Math.round(discSavings * share * 100) / 100 : 0;
                           const net = Math.round((m.amount - mDisc) * 100) / 100;
                           return (
                             <div key={m.id} className="flex justify-between text-sm" data-testid={`milestone-row-${idx}`}>
