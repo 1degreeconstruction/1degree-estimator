@@ -5,6 +5,7 @@ import { z } from "zod";
 // Sales Reps
 export const salesReps = pgTable("sales_reps", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   name: text("name").notNull(),
   title: text("title").notNull(),
   email: text("email").notNull(),
@@ -18,6 +19,7 @@ export type SalesRep = typeof salesReps.$inferSelect;
 // Estimates
 export const estimates = pgTable("estimates", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateNumber: text("estimate_number").notNull().unique(),
   clientName: text("client_name").notNull(),
   clientEmail: text("client_email").notNull(),
@@ -56,6 +58,7 @@ export type Estimate = typeof estimates.$inferSelect;
 // Estimate Line Items
 export const lineItems = pgTable("line_items", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateId: integer("estimate_id").notNull(),
   sortOrder: integer("sort_order").notNull(),
   phaseGroup: text("phase_group").notNull(),
@@ -73,6 +76,7 @@ export type LineItem = typeof lineItems.$inferSelect;
 // Payment Milestones
 export const paymentMilestones = pgTable("payment_milestones", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateId: integer("estimate_id").notNull(),
   milestoneName: text("milestone_name").notNull(),
   amount: real("amount").notNull(),
@@ -86,6 +90,7 @@ export type PaymentMilestone = typeof paymentMilestones.$inferSelect;
 // Estimate Events
 export const estimateEvents = pgTable("estimate_events", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateId: integer("estimate_id").notNull(),
   eventType: text("event_type").notNull(),
   timestamp: timestamp("timestamp").notNull().defaultNow(),
@@ -118,6 +123,7 @@ export type User = typeof users.$inferSelect;
 // Contacts (shared client database)
 export const contacts = pgTable("contacts", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
@@ -137,6 +143,7 @@ export type Contact = typeof contacts.$inferSelect;
 // Email Logs
 export const emailLogs = pgTable("email_logs", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateId: integer("estimate_id"),  // nullable for unmatched inbound
   sentByUserId: integer("sent_by_user_id"),
   recipientEmail: text("recipient_email").notNull(),
@@ -157,6 +164,7 @@ export const emailLogs = pgTable("email_logs", {
 // Team config (key-value store for shared settings)
 export const teamConfig = pgTable("team_config", {
   key: text("key").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   value: text("value").notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -166,6 +174,7 @@ export const insertEmailLogSchema = createInsertSchema(emailLogs).omit({ id: tru
 // Estimate Messages (client <-> team chat)
 export const estimateMessages = pgTable("estimate_messages", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateId: integer("estimate_id").notNull(),
   senderType: text("sender_type").notNull(), // client | team
   senderName: text("sender_name").notNull(),
@@ -184,6 +193,7 @@ export type EmailLog = typeof emailLogs.$inferSelect;
 // Activity Log (audit trail)
 export const activityLog = pgTable("activity_log", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateId: integer("estimate_id"),
   userId: integer("user_id"),
   action: text("action").notNull(), // created | edited | sent | viewed | signed | status_changed | note_added | email_sent
@@ -199,6 +209,7 @@ export type ActivityLog = typeof activityLog.$inferSelect;
 // Estimate Versions (snapshot on every edit)
 export const estimateVersions = pgTable("estimate_versions", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateId: integer("estimate_id").notNull(),
   versionNumber: integer("version_number").notNull(),
   snapshotJson: jsonb("snapshot_json").notNull(), // full estimate + line items + milestones
@@ -214,6 +225,7 @@ export type EstimateVersion = typeof estimateVersions.$inferSelect;
 // Pricing History
 export const pricingHistory = pgTable("pricing_history", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   trade: text("trade").notNull(),
   scopeKeyword: text("scope_keyword").notNull(),
   subCost: real("sub_cost").notNull(),
@@ -233,6 +245,7 @@ export type PricingHistory = typeof pricingHistory.$inferSelect;
 // Line Item Breakdowns (internal trade-level breakdown for grouped phases)
 export const lineItemBreakdowns = pgTable("line_item_breakdowns", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   lineItemId: integer("line_item_id").notNull(),
   tradeName: text("trade_name").notNull(),
   subCost: real("sub_cost").notNull().default(0),
@@ -247,6 +260,7 @@ export type LineItemBreakdown = typeof lineItemBreakdowns.$inferSelect;
 // Purchase Orders (sub invoices & PO uploads with OCR)
 export const purchaseOrders = pgTable("purchase_orders", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateId: integer("estimate_id"),
   uploadedByUserId: integer("uploaded_by_user_id"),
   filename: text("filename").notNull(),
@@ -265,6 +279,7 @@ export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
 // Estimate <-> Purchase Order junction table (for cross-project linking)
 export const estimatePurchaseOrderLinks = pgTable("estimate_purchase_order_links", {
   id: serial("id").primaryKey(),
+  orgId: integer("org_id").notNull().default(1),
   estimateId: integer("estimate_id").notNull(),
   purchaseOrderId: integer("purchase_order_id").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
