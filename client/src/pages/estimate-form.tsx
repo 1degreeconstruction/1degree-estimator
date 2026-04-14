@@ -1789,14 +1789,15 @@ export default function EstimateForm() {
 
       {/* Fixed bottom banner — Estimate Summary */}
       <div className="fixed bottom-0 right-0 left-60 z-30 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 max-md:left-0" data-testid="section-calculations">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-center gap-4 py-3 overflow-x-auto">
-            {/* Stats row */}
-            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+        <div className="max-w-7xl mx-auto px-4 py-2 space-y-1.5">
+          {/* Row 1: Financials */}
+          <div className="flex items-center gap-3 flex-wrap text-xs">
+            <div className="flex items-center gap-1 whitespace-nowrap">
               <span className="text-muted-foreground">Cost:</span>
               <span className="font-mono font-medium" data-testid="text-total-sub-cost">{formatCurrency(calculations.totalSubCost)}</span>
             </div>
-            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+            <span className="text-muted-foreground/40">·</span>
+            <div className="flex items-center gap-1 whitespace-nowrap">
               <span className="text-muted-foreground">Markup:</span>
               <Input
                 type="number"
@@ -1805,66 +1806,66 @@ export default function EstimateForm() {
                 step={5}
                 value={markupRate}
                 onChange={e => setMarkupRate(Math.max(0, parseFloat(e.target.value) || 0))}
-                className="h-6 w-16 text-xs font-mono text-right inline-block"
+                className="h-5 w-14 text-xs font-mono text-right inline-block"
                 data-testid="input-markup-rate"
               />
               <span className="text-muted-foreground">%</span>
             </div>
-            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+            <span className="text-muted-foreground/40">·</span>
+            <div className="flex items-center gap-1 whitespace-nowrap">
               <span className="text-muted-foreground">Subtotal:</span>
               <span className="font-mono" data-testid="text-subtotal">{formatCurrency(calculations.subtotal)}</span>
             </div>
-            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+            <span className="text-muted-foreground/40">·</span>
+            <div className="flex items-center gap-1 whitespace-nowrap">
               <span className="text-muted-foreground">Allowance:</span>
               <span className="font-mono" data-testid="text-allowance">{formatCurrency(calculations.allowance)}</span>
             </div>
-            <Separator orientation="vertical" className="h-6" />
-            {calculations.clientVisibleSavings > 0 && (
-              <div className="flex items-center gap-1 text-xs whitespace-nowrap">
-                <span className="text-muted-foreground">Was:</span>
-                <span className="font-mono line-through text-muted-foreground">{formatCurrency(calculations.clientVisibleOriginal)}</span>
-                <span className="font-mono font-semibold text-green-500">-{formatCurrency(calculations.clientVisibleSavings)}</span>
-                <span className="text-[10px] font-semibold text-green-500 bg-green-500/10 px-1 rounded">
-                  {calculations.clientVisibleOriginal > 0 ? (Math.round((calculations.clientVisibleSavings / calculations.clientVisibleOriginal) * 1000) / 10) % 1 === 0 ? Math.round((calculations.clientVisibleSavings / calculations.clientVisibleOriginal) * 100) : (Math.round((calculations.clientVisibleSavings / calculations.clientVisibleOriginal) * 1000) / 10).toFixed(1) : 0}% off
-                </span>
-              </div>
-            )}
+            <span className="text-muted-foreground/40">·</span>
             <div className="flex items-center gap-1 whitespace-nowrap">
-              <span className="text-sm font-semibold">Total:</span>
-              <span className="text-sm font-mono font-bold text-primary" data-testid="text-total-client-price">{formatCurrency(calculations.total)}</span>
-            </div>
-            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
               <span className="text-muted-foreground">Deposit:</span>
               <span className="font-mono" data-testid="text-deposit">{formatCurrency(calculations.deposit)}</span>
             </div>
-            <div className="flex items-center gap-1 text-xs whitespace-nowrap">
+            <span className="text-muted-foreground/40">·</span>
+            <div className="flex items-center gap-1 whitespace-nowrap">
               <span className="text-muted-foreground">Margin:</span>
               <span className="font-mono">{formatCurrency(calculations.margin)}</span>
             </div>
-
-            {/* Spacer */}
+          </div>
+          {/* Row 2: Total + Discount + Actions */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold">Total:</span>
+              <span className="text-sm font-mono font-bold text-primary" data-testid="text-total-client-price">{formatCurrency(calculations.total)}</span>
+            </div>
+            {calculations.clientVisibleSavings > 0 && (
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="font-mono line-through text-muted-foreground">{formatCurrency(calculations.clientVisibleOriginal)}</span>
+                <span className="font-semibold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded text-[10px]">
+                  -{formatCurrency(calculations.clientVisibleSavings)} ({calculations.clientVisibleOriginal > 0 ? (() => { const p = Math.round((calculations.clientVisibleSavings / calculations.clientVisibleOriginal) * 1000) / 10; return p % 1 === 0 ? p.toFixed(0) : p.toFixed(1); })() : "0"}% off)
+                </span>
+              </div>
+            )}
             <div className="flex-1" />
-
-            {/* Action buttons */}
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5 h-8"
+              className="gap-1.5 h-7 text-xs"
               onClick={() => handleSave("draft")}
               disabled={isPending}
               data-testid="button-save-draft"
             >
-              <Save className="w-3.5 h-3.5" />
+              <Save className="w-3 h-3" />
               Save Draft
             </Button>
             <Button
               size="sm"
-              className="gap-1.5 h-8 bg-orange-600 hover:bg-orange-700"
+              className="gap-1.5 h-7 text-xs bg-orange-600 hover:bg-orange-700"
               onClick={() => handleSave("sent")}
               disabled={isPending}
               data-testid="button-send"
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className="w-3 h-3" />
               Send to Client
             </Button>
           </div>
@@ -1872,7 +1873,7 @@ export default function EstimateForm() {
       </div>
 
       {/* Bottom padding so content isn't hidden behind the banner */}
-      <div className="h-16" />
+      <div className="h-20" />
     </AdminLayout>
   );
 }
