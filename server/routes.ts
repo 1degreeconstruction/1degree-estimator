@@ -136,14 +136,14 @@ function getClientInitials(name: string): string {
   return name.trim().split(/\s+/).map(w => w[0]?.toUpperCase() || '').join('');
 }
 
-async function generateEstimateNumber(clientName: string, projectAddress: string): Promise<string> {
+async function generateEstimateNumber(clientName: string, projectAddress: string, orgId?: number): Promise<string> {
   const now = new Date();
   const dateStr = format(now, "MMddyyyy");
   const streetInit = getStreetInitials(projectAddress);
   const clientInit = getClientInitials(clientName);
 
   // Count existing estimates for this client
-  const existing = await storage.getEstimates(undefined, (req as any).orgId);
+  const existing = await storage.getEstimates(undefined, orgId);
   const clientEstimates = existing.filter(e =>
     e.clientName?.toLowerCase() === clientName.toLowerCase()
   );
@@ -1611,7 +1611,8 @@ RULES:
       const now = new Date();
       const estimateNumber = await generateEstimateNumber(
         estimateData.clientName || "Unknown",
-        estimateData.projectAddress || "Unknown"
+        estimateData.projectAddress || "Unknown",
+        (req as any).orgId
       );
       const uniqueId = generateUniqueId();
 
