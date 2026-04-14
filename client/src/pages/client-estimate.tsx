@@ -366,8 +366,10 @@ export default function ClientEstimate() {
       if (!hasApparentDiscount) originalTotal = estimate.totalClientPrice + eAny.realDiscountValue;
     }
   }
-  // savingsPct is the single source of truth for display
-  const savingsPct = originalTotal > 0 ? Math.round((totalSavings / originalTotal) * 100) : 0;
+  // savingsPct is the single source of truth for display (1 decimal place)
+  const savingsPctRaw = originalTotal > 0 ? (totalSavings / originalTotal) * 100 : 0;
+  const savingsPct = Math.round(savingsPctRaw * 10) / 10; // e.g. 0.5%, 4.8%, 15.0%
+  const savingsPctLabel = savingsPct % 1 === 0 ? savingsPct.toFixed(0) : savingsPct.toFixed(1);
 
   return (
     <>
@@ -442,14 +444,16 @@ export default function ClientEstimate() {
                     <h3 className="font-semibold text-sm">{section.label}</h3>
                     {(() => {
                       const linePrice = section.collectivePrice !== null ? section.collectivePrice : section.items[0].clientPrice;
-                      if (hasDiscount && savingsPct > 0) {
-                        // Apply same savings % to each line item deterministically
-                        const discountedPrice = Math.round(linePrice * (1 - savingsPct / 100) * 100) / 100;
+                      if (hasDiscount && totalSavings > 0) {
+                        // Distribute dollar savings proportionally to each line item
+                        const itemShare = originalTotal > 0 ? linePrice / originalTotal : 0;
+                        const itemSavings = Math.round(totalSavings * itemShare * 100) / 100;
+                        const discountedPrice = Math.round((linePrice - itemSavings) * 100) / 100;
                         return (
                           <div className="text-right flex items-center gap-2">
                             <span className="font-mono text-xs text-muted-foreground line-through">{formatCurrency(linePrice)}</span>
                             <span className="font-mono text-sm font-semibold text-green-600 dark:text-green-400">{formatCurrency(discountedPrice)}</span>
-                            <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/15 px-1.5 py-0.5 rounded">{savingsPct}% off</span>
+                            <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/15 px-1.5 py-0.5 rounded">{savingsPctLabel}% off</span>
                           </div>
                         );
                       }
@@ -495,14 +499,14 @@ export default function ClientEstimate() {
               </p>
               <Separator />
               {/* Discount display */}
-              {hasDiscount && savingsPct > 0 && (
+              {hasDiscount && totalSavings > 0 && (
                 <div className="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-lg p-3 mb-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Original Price</span>
                     <span className="font-mono line-through text-muted-foreground">{formatCurrency(originalTotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm font-semibold text-green-700 dark:text-green-400">
-                    <span>You Save ({savingsPct}%)</span>
+                    <span>You Save ({savingsPctLabel}%)</span>
                     <span className="font-mono">-{formatCurrency(totalSavings)}</span>
                   </div>
                 </div>
