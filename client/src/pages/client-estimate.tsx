@@ -337,28 +337,37 @@ export default function ClientEstimate() {
   // Recalculate subtotal from visible client prices
   const subtotal = sortedItems.reduce((sum, i) => sum + i.clientPrice, 0);
 
-  // Calculate discount ratio for line item display
+  // Deterministic discount calc — derive everything from stored discount fields
   const eAny = estimate as any;
-  const hasDiscount = (eAny.apparentDiscountType && eAny.apparentDiscountValue > 0) || (eAny.realDiscountType && eAny.realDiscountValue > 0);
-  let discountRatio = 1; // ratio of discounted price to original
-  if (hasDiscount) {
-    let originalTotal = estimate.totalClientPrice;
-    if (eAny.apparentDiscountType && eAny.apparentDiscountValue > 0) {
-      if (eAny.apparentDiscountType === "percent") {
-        originalTotal = Math.round(estimate.totalClientPrice / (1 - eAny.apparentDiscountValue / 100) * 100) / 100;
-      } else {
-        originalTotal = estimate.totalClientPrice + eAny.apparentDiscountValue;
-      }
+  const hasApparentDiscount = eAny.apparentDiscountType && eAny.apparentDiscountValue > 0;
+  const hasRealDiscount = eAny.realDiscountType && eAny.realDiscountValue > 0;
+  const hasDiscount = hasApparentDiscount || hasRealDiscount;
+
+  // totalSavings = exact dollar amount saved; originalTotal = price before discount
+  let totalSavings = 0;
+  let originalTotal = estimate.totalClientPrice;
+  if (hasApparentDiscount) {
+    if (eAny.apparentDiscountType === "percent") {
+      // apparent % inflates visible original: original * (1 - pct) = current
+      originalTotal = Math.round(estimate.totalClientPrice / (1 - eAny.apparentDiscountValue / 100) * 100) / 100;
+    } else {
+      originalTotal = estimate.totalClientPrice + eAny.apparentDiscountValue;
     }
-    if (eAny.realDiscountType && eAny.realDiscountValue > 0 && !(eAny.apparentDiscountType && eAny.apparentDiscountValue > 0)) {
-      if (eAny.realDiscountType === "percent") {
-        originalTotal = Math.round(estimate.totalClientPrice / (1 - eAny.realDiscountValue / 100) * 100) / 100;
-      } else {
-        originalTotal = estimate.totalClientPrice + eAny.realDiscountValue;
-      }
-    }
-    discountRatio = originalTotal > 0 ? estimate.totalClientPrice / originalTotal : 1;
+    totalSavings = originalTotal - estimate.totalClientPrice;
   }
+  if (hasRealDiscount) {
+    if (eAny.realDiscountType === "percent") {
+      // real % already baked into totalClientPrice
+      const preReal = Math.round(estimate.totalClientPrice / (1 - eAny.realDiscountValue / 100) * 100) / 100;
+      totalSavings += preReal - estimate.totalClientPrice;
+      if (!hasApparentDiscount) originalTotal = preReal;
+    } else {
+      totalSavings += eAny.realDiscountValue;
+      if (!hasApparentDiscount) originalTotal = estimate.totalClientPrice + eAny.realDiscountValue;
+    }
+  }
+  // savingsPct is the single source of truth for display
+  const savingsPct = originalTotal > 0 ? Math.round((totalSavings / originalTotal) * 100) : 0;
 
   return (
     <>
@@ -432,19 +441,19 @@ export default function ClientEstimate() {
                   <div className="flex items-center justify-between p-4 bg-muted/30">
                     <h3 className="font-semibold text-sm">{section.label}</h3>
                     {(() => {
-                      const originalPrice = section.collectivePrice !== null ? section.collectivePrice : section.items[0].clientPrice;
-                      const discountedPrice = Math.round(originalPrice * discountRatio * 100) / 100;
-                      if (hasDiscount && discountRatio < 1) {
-                        const pctOff = Math.round((1 - discountRatio) * 100);
+                      const linePrice = section.collectivePrice !== null ? section.collectivePrice : section.items[0].clientPrice;
+                      if (hasDiscount && savingsPct > 0) {
+                        // Apply same savings % to each line item deterministically
+                        const discountedPrice = Math.round(linePrice * (1 - savingsPct / 100) * 100) / 100;
                         return (
                           <div className="text-right flex items-center gap-2">
-                            <span className="font-mono text-xs text-muted-foreground line-through">{formatCurrency(originalPrice)}</span>
+                            <span className="font-mono text-xs text-muted-foreground line-through">{formatCurrency(linePrice)}</span>
                             <span className="font-mono text-sm font-semibold text-green-600 dark:text-green-400">{formatCurrency(discountedPrice)}</span>
-                            <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/15 px-1.5 py-0.5 rounded">{pctOff}% off</span>
+                            <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/15 px-1.5 py-0.5 rounded">{savingsPct}% off</span>
                           </div>
                         );
                       }
-                      return <span className="font-mono text-sm font-semibold">{formatCurrency(originalPrice)}</span>;
+                      return <span className="font-mono text-sm font-semibold">{formatCurrency(linePrice)}</span>;
                     })()}
                   </div>
                   <CardContent className="pt-3 pb-4">
@@ -486,49 +495,18 @@ export default function ClientEstimate() {
               </p>
               <Separator />
               {/* Discount display */}
-              {(() => {
-                const e = estimate as any;
-                const hasApparent = e.apparentDiscountType && e.apparentDiscountValue > 0;
-                const hasReal = e.realDiscountType && e.realDiscountValue > 0;
-                if (!hasApparent && !hasReal) return null;
-
-                // Calculate what the client sees
-                let originalPrice = estimate.totalClientPrice;
-                let savings = 0;
-                if (hasApparent) {
-                  if (e.apparentDiscountType === "percent") {
-                    originalPrice = Math.round(estimate.totalClientPrice / (1 - e.apparentDiscountValue / 100) * 100) / 100;
-                  } else {
-                    originalPrice = estimate.totalClientPrice + e.apparentDiscountValue;
-                  }
-                  savings += originalPrice - estimate.totalClientPrice;
-                }
-                if (hasReal) {
-                  // Real discount is already baked into totalClientPrice
-                  if (e.realDiscountType === "percent") {
-                    const preReal = Math.round(estimate.totalClientPrice / (1 - e.realDiscountValue / 100) * 100) / 100;
-                    savings += preReal - estimate.totalClientPrice;
-                    if (!hasApparent) originalPrice = preReal;
-                  } else {
-                    savings += e.realDiscountValue;
-                    if (!hasApparent) originalPrice = estimate.totalClientPrice + e.realDiscountValue;
-                  }
-                }
-
-                const savingsPct = originalPrice > 0 ? Math.round((savings / originalPrice) * 100) : 0;
-                return (
-                  <div className="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-lg p-3 mb-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Original Price</span>
-                      <span className="font-mono line-through text-muted-foreground">{formatCurrency(originalPrice)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm font-semibold text-green-700 dark:text-green-400">
-                      <span>You Save ({savingsPct}%)</span>
-                      <span className="font-mono">-{formatCurrency(savings)}</span>
-                    </div>
+              {hasDiscount && savingsPct > 0 && (
+                <div className="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-lg p-3 mb-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Original Price</span>
+                    <span className="font-mono line-through text-muted-foreground">{formatCurrency(originalTotal)}</span>
                   </div>
-                );
-              })()}
+                  <div className="flex justify-between text-sm font-semibold text-green-700 dark:text-green-400">
+                    <span>You Save ({savingsPct}%)</span>
+                    <span className="font-mono">-{formatCurrency(totalSavings)}</span>
+                  </div>
+                </div>
+              )}
               <div className="flex justify-between font-semibold text-lg">
                 <span>Total</span>
                 <span className="font-mono text-primary" data-testid="text-total">{formatCurrency(estimate.totalClientPrice)}</span>
