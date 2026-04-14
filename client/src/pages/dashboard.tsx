@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Plus, Search, FileText, MapPin, Calendar, User } from "lucide-react";
+import { Plus, Search, FileText, MapPin, Calendar, User, Copy } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate, getStatusColor, getStatusLabel } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useState } from "react";
@@ -31,6 +32,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [estimateScope, setEstimateScope] = useState<"all" | "mine">("all");
   const { user } = useAuth();
+  const { toast } = useToast();
 
   const { data: estimates, isLoading } = useQuery<EnrichedEstimate[]>({
     queryKey: estimateScope === "mine" ? ["/api/estimates?mine=true"] : ["/api/estimates"],
@@ -216,7 +218,19 @@ export default function Dashboard() {
                         )}
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="text-right shrink-0 flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const url = `${window.location.origin}/#/estimate/${estimate.uniqueId}`;
+                          navigator.clipboard.writeText(url).then(() => toast({ title: "Link copied" }));
+                        }}
+                        className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+                        title="Copy client link"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
                       <p className="font-semibold text-sm" data-testid={`text-total-${estimate.id}`}>
                         {formatCurrency(estimate.totalClientPrice)}
                       </p>
