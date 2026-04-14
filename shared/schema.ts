@@ -49,6 +49,10 @@ export const estimates = pgTable("estimates", {
   projectInclusions: text("project_inclusions"),
   projectExclusions: text("project_exclusions"),
   markupRate: real("markup_rate").notNull().default(100),
+  apparentDiscountType: text("apparent_discount_type"), // percent | dollar | null
+  apparentDiscountValue: real("apparent_discount_value"),
+  realDiscountType: text("real_discount_type"), // percent | dollar | null
+  realDiscountValue: real("real_discount_value"),
 });
 
 export const insertEstimateSchema = createInsertSchema(estimates).omit({ id: true });

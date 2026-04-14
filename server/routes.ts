@@ -1373,6 +1373,10 @@ RULES:
         projectInclusions: estimateData.projectInclusions || null,
         projectExclusions: estimateData.projectExclusions || null,
         markupRate,
+        apparentDiscountType: estimateData.apparentDiscountType || null,
+        apparentDiscountValue: estimateData.apparentDiscountValue || null,
+        realDiscountType: estimateData.realDiscountType || null,
+        realDiscountValue: estimateData.realDiscountValue || null,
         sentAt: estimateData.status === "sent" ? now : null,
         viewedAt: null,
         approvedAt: null,
@@ -1548,6 +1552,10 @@ RULES:
         projectInclusions: estimateData.projectInclusions !== undefined ? estimateData.projectInclusions : null,
         projectExclusions: estimateData.projectExclusions !== undefined ? estimateData.projectExclusions : null,
         markupRate,
+        apparentDiscountType: estimateData.apparentDiscountType !== undefined ? estimateData.apparentDiscountType : undefined,
+        apparentDiscountValue: estimateData.apparentDiscountValue !== undefined ? estimateData.apparentDiscountValue : undefined,
+        realDiscountType: estimateData.realDiscountType !== undefined ? estimateData.realDiscountType : undefined,
+        realDiscountValue: estimateData.realDiscountValue !== undefined ? estimateData.realDiscountValue : undefined,
         sentAt: isSending ? now : undefined,
       });
 

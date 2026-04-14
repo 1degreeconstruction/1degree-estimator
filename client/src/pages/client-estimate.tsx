@@ -452,6 +452,49 @@ export default function ClientEstimate() {
                 A 3% allowance of the total contract value is included as a budget for unforeseen conditions. Any unforeseen conditions that do not fit within this allowance will be addressed through a formal written change order.
               </p>
               <Separator />
+              {/* Discount display */}
+              {(() => {
+                const e = estimate as any;
+                const hasApparent = e.apparentDiscountType && e.apparentDiscountValue > 0;
+                const hasReal = e.realDiscountType && e.realDiscountValue > 0;
+                if (!hasApparent && !hasReal) return null;
+
+                // Calculate what the client sees
+                let originalPrice = estimate.totalClientPrice;
+                let savings = 0;
+                if (hasApparent) {
+                  if (e.apparentDiscountType === "percent") {
+                    originalPrice = Math.round(estimate.totalClientPrice / (1 - e.apparentDiscountValue / 100) * 100) / 100;
+                  } else {
+                    originalPrice = estimate.totalClientPrice + e.apparentDiscountValue;
+                  }
+                  savings += originalPrice - estimate.totalClientPrice;
+                }
+                if (hasReal) {
+                  // Real discount is already baked into totalClientPrice
+                  if (e.realDiscountType === "percent") {
+                    const preReal = Math.round(estimate.totalClientPrice / (1 - e.realDiscountValue / 100) * 100) / 100;
+                    savings += preReal - estimate.totalClientPrice;
+                    if (!hasApparent) originalPrice = preReal;
+                  } else {
+                    savings += e.realDiscountValue;
+                    if (!hasApparent) originalPrice = estimate.totalClientPrice + e.realDiscountValue;
+                  }
+                }
+
+                return (
+                  <div className="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-lg p-3 mb-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Original Price</span>
+                      <span className="font-mono line-through text-muted-foreground">{formatCurrency(originalPrice)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-semibold text-green-700 dark:text-green-400">
+                      <span>You Save</span>
+                      <span className="font-mono">-{formatCurrency(savings)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="flex justify-between font-semibold text-lg">
                 <span>Total</span>
                 <span className="font-mono text-primary" data-testid="text-total">{formatCurrency(estimate.totalClientPrice)}</span>

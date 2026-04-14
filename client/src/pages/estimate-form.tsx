@@ -88,6 +88,10 @@ export default function EstimateForm() {
   const [notesInternal, setNotesInternal] = useState("");
   const [permitRequired, setPermitRequired] = useState(false);
   const [markupRate, setMarkupRate] = useState(100);
+  const [apparentDiscountType, setApparentDiscountType] = useState<string>("");
+  const [apparentDiscountValue, setApparentDiscountValue] = useState(0);
+  const [realDiscountType, setRealDiscountType] = useState<string>("");
+  const [realDiscountValue, setRealDiscountValue] = useState(0);
   const [showContactSuggestions, setShowContactSuggestions] = useState(false);
   const [showMeetings, setShowMeetings] = useState(false);
   const [selectedMeetingRaw, setSelectedMeetingRaw] = useState<any>(null); // raw calendar event for AI context
@@ -380,6 +384,10 @@ export default function EstimateForm() {
       setProjectExclusions((existingEstimate as any).projectExclusions || "");
       setPermitRequired(existingEstimate.permitRequired);
       setMarkupRate((existingEstimate as any).markupRate ?? 100);
+      setApparentDiscountType((existingEstimate as any).apparentDiscountType || "");
+      setApparentDiscountValue((existingEstimate as any).apparentDiscountValue || 0);
+      setRealDiscountType((existingEstimate as any).realDiscountType || "");
+      setRealDiscountValue((existingEstimate as any).realDiscountValue || 0);
       setItems(
         existingEstimate.lineItems
           .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -435,11 +443,47 @@ export default function EstimateForm() {
     const markupMultiplier = 1 + (markupRate || 100) / 100;
     const subtotal = Math.round(totalSubCost * markupMultiplier * 100) / 100;
     const allowance = Math.round(subtotal * 0.03 * 100) / 100;
-    const total = Math.round((subtotal + allowance) * 100) / 100;
+    const preDiscountTotal = Math.round((subtotal + allowance) * 100) / 100;
+
+    // Apparent discount: inflates the "original" price shown to client, actual total stays the same
+    let apparentOriginal = preDiscountTotal;
+    let apparentSavings = 0;
+    if (apparentDiscountType === "percent" && apparentDiscountValue > 0) {
+      // Client sees a higher "original" price, discounted to the real total
+      apparentOriginal = Math.round(preDiscountTotal / (1 - apparentDiscountValue / 100) * 100) / 100;
+      apparentSavings = Math.round((apparentOriginal - preDiscountTotal) * 100) / 100;
+    } else if (apparentDiscountType === "dollar" && apparentDiscountValue > 0) {
+      apparentOriginal = preDiscountTotal + apparentDiscountValue;
+      apparentSavings = apparentDiscountValue;
+    }
+
+    // Real discount: actually reduces the total (and your profit)
+    let realSavings = 0;
+    let total = preDiscountTotal;
+    if (realDiscountType === "percent" && realDiscountValue > 0) {
+      realSavings = Math.round(preDiscountTotal * (realDiscountValue / 100) * 100) / 100;
+      total = Math.round((preDiscountTotal - realSavings) * 100) / 100;
+    } else if (realDiscountType === "dollar" && realDiscountValue > 0) {
+      realSavings = realDiscountValue;
+      total = Math.round((preDiscountTotal - realSavings) * 100) / 100;
+    }
+
+    // If apparent discount is active, the client sees: apparentOriginal → total (after both discounts)
+    // Total shown to client = total (after real discount)
+    // "You save" shown to client = apparentSavings + realSavings
+    const clientVisibleOriginal = apparentSavings > 0 ? apparentOriginal : (realSavings > 0 ? preDiscountTotal : 0);
+    const clientVisibleSavings = apparentSavings + realSavings;
+
     const deposit = Math.min(1000, Math.round(total * 0.1 * 100) / 100);
     const milestoneTotal = milestones.reduce((sum, m) => sum + (m.amount || 0), 0);
-    return { totalSubCost, subtotal, allowance, total, deposit, milestoneTotal, markupMultiplier };
-  }, [items, milestones, markupRate]);
+    const margin = subtotal - totalSubCost - realSavings;
+
+    return {
+      totalSubCost, subtotal, allowance, preDiscountTotal, total, deposit,
+      milestoneTotal, markupMultiplier, apparentOriginal, apparentSavings,
+      realSavings, clientVisibleOriginal, clientVisibleSavings, margin,
+    };
+  }, [items, milestones, markupRate, apparentDiscountType, apparentDiscountValue, realDiscountType, realDiscountValue]);
 
   // Line item helpers
   const addLineItem = () => {
@@ -724,6 +768,10 @@ export default function EstimateForm() {
         salesRepId, notesInternal, permitRequired,
         projectInclusions, projectExclusions,
         markupRate,
+        apparentDiscountType: apparentDiscountType || null,
+        apparentDiscountValue: apparentDiscountValue || null,
+        realDiscountType: realDiscountType || null,
+        realDiscountValue: realDiscountValue || null,
         status,
         lineItems: items,
         milestones,
@@ -749,6 +797,10 @@ export default function EstimateForm() {
         salesRepId, notesInternal, permitRequired,
         projectInclusions, projectExclusions,
         markupRate,
+        apparentDiscountType: apparentDiscountType || null,
+        apparentDiscountValue: apparentDiscountValue || null,
+        realDiscountType: realDiscountType || null,
+        realDiscountValue: realDiscountValue || null,
         status,
         lineItems: items,
         milestones,
@@ -1315,6 +1367,82 @@ export default function EstimateForm() {
               </CardContent>
             </Card>
 
+            {/* Discounts */}
+            <Card data-testid="section-discounts">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold">Discounts</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Apparent Discount */}
+                  <div className="space-y-2 p-3 rounded-lg border border-dashed border-zinc-700">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-amber-400">Apparent Discount</span>
+                      <span className="text-[10px] text-muted-foreground">(cosmetic only — no profit impact)</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={apparentDiscountType || "none"} onValueChange={v => setApparentDiscountType(v === "none" ? "" : v)}>
+                        <SelectTrigger className="w-28 h-8 text-xs"><SelectValue placeholder="None" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="percent">Percent %</SelectItem>
+                          <SelectItem value="dollar">Dollar $</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {apparentDiscountType && (
+                        <Input
+                          type="number" min={0}
+                          className="w-24 h-8 text-xs"
+                          value={apparentDiscountValue || ""}
+                          onChange={e => setApparentDiscountValue(parseFloat(e.target.value) || 0)}
+                          placeholder={apparentDiscountType === "percent" ? "10" : "500"}
+                        />
+                      )}
+                    </div>
+                    {calculations.apparentSavings > 0 && (
+                      <p className="text-xs text-amber-400">Client sees: <s className="text-muted-foreground">{formatCurrency(calculations.apparentOriginal)}</s> → {formatCurrency(calculations.preDiscountTotal)} (saves {formatCurrency(calculations.apparentSavings)})</p>
+                    )}
+                  </div>
+
+                  {/* Real Discount */}
+                  <div className="space-y-2 p-3 rounded-lg border border-dashed border-red-700/50">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-red-400">Real Discount</span>
+                      <span className="text-[10px] text-muted-foreground">(reduces profit)</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <Select value={realDiscountType || "none"} onValueChange={v => setRealDiscountType(v === "none" ? "" : v)}>
+                        <SelectTrigger className="w-28 h-8 text-xs"><SelectValue placeholder="None" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          <SelectItem value="percent">Percent %</SelectItem>
+                          <SelectItem value="dollar">Dollar $</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {realDiscountType && (
+                        <Input
+                          type="number" min={0}
+                          className="w-24 h-8 text-xs"
+                          value={realDiscountValue || ""}
+                          onChange={e => setRealDiscountValue(parseFloat(e.target.value) || 0)}
+                          placeholder={realDiscountType === "percent" ? "5" : "250"}
+                        />
+                      )}
+                    </div>
+                    {calculations.realSavings > 0 && (
+                      <p className="text-xs text-red-400">Actual reduction: -{formatCurrency(calculations.realSavings)} (margin now {formatCurrency(calculations.margin)})</p>
+                    )}
+                  </div>
+                </div>
+
+                {calculations.clientVisibleSavings > 0 && (
+                  <div className="text-xs bg-green-500/10 text-green-400 border border-green-500/20 rounded px-3 py-2">
+                    Client will see: <s>{formatCurrency(calculations.clientVisibleOriginal)}</s> → <strong>{formatCurrency(calculations.total)}</strong> — "You save {formatCurrency(calculations.clientVisibleSavings)}"
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Payment Schedule */}
             <Card data-testid="section-payment-schedule">
               <CardHeader className="pb-4 flex flex-row items-center justify-between">
@@ -1679,7 +1807,7 @@ export default function EstimateForm() {
             </div>
             <div className="flex items-center gap-1 text-xs whitespace-nowrap">
               <span className="text-muted-foreground">Margin:</span>
-              <span className="font-mono">{formatCurrency(calculations.subtotal - calculations.totalSubCost)}</span>
+              <span className="font-mono">{formatCurrency(calculations.margin)}</span>
             </div>
 
             {/* Spacer */}
