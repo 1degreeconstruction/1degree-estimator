@@ -466,17 +466,49 @@ export default function EstimateDetailPage() {
               <CardContent>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm" data-testid="table-line-items">
+                    {(() => {
+                      const ea = estimate as any;
+                      const hasDisc = (ea.apparentDiscountType && ea.apparentDiscountValue > 0) || (ea.realDiscountType && ea.realDiscountValue > 0);
+                      // Pre-compute discount per line item
+                      let origTotal = estimate.totalClientPrice;
+                      let savings = 0;
+                      if (ea.apparentDiscountType && ea.apparentDiscountValue > 0) {
+                        origTotal = ea.apparentDiscountType === "percent"
+                          ? Math.round(estimate.totalClientPrice / (1 - ea.apparentDiscountValue / 100) * 100) / 100
+                          : estimate.totalClientPrice + ea.apparentDiscountValue;
+                        savings = origTotal - estimate.totalClientPrice;
+                      }
+                      if (ea.realDiscountType && ea.realDiscountValue > 0) {
+                        if (ea.realDiscountType === "percent") {
+                          const pre = Math.round(estimate.totalClientPrice / (1 - ea.realDiscountValue / 100) * 100) / 100;
+                          savings += pre - estimate.totalClientPrice;
+                          if (!(ea.apparentDiscountType && ea.apparentDiscountValue > 0)) origTotal = pre;
+                        } else {
+                          savings += ea.realDiscountValue;
+                          if (!(ea.apparentDiscountType && ea.apparentDiscountValue > 0)) origTotal = estimate.totalClientPrice + ea.realDiscountValue;
+                        }
+                      }
+                      const pctRaw = origTotal > 0 ? (savings / origTotal) * 100 : 0;
+                      const pct = Math.round(pctRaw * 10) / 10;
+                      const pctLabel = pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(1);
+
+                      return (<>
                     <thead>
                       <tr className="border-b text-xs text-muted-foreground uppercase tracking-wider">
                         <th className="text-left py-2 pr-4">Phase</th>
                         <th className="text-left py-2 pr-4">Scope</th>
                         <th className="text-right py-2 pr-4">Sub Cost</th>
                         <th className="text-right py-2 pr-4">Client Price</th>
+                        {hasDisc && <th className="text-right py-2 pr-4">After Discount</th>}
                         <th className="text-right py-2">Margin</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedItems.map((item, idx) => (
+                      {sortedItems.map((item, idx) => {
+                        const discPrice = hasDisc && origTotal > 0
+                          ? Math.round((item.clientPrice - savings * (item.clientPrice / origTotal)) * 100) / 100
+                          : item.clientPrice;
+                        return (
                         <>
                           <tr key={item.id} className="border-b last:border-0" data-testid={`row-line-item-${idx}`}>
                             <td className="py-3 pr-4 align-top">
@@ -489,9 +521,15 @@ export default function EstimateDetailPage() {
                             </td>
                             <td className="py-3 pr-4 align-top text-muted-foreground">{item.scopeDescription}</td>
                             <td className="py-3 pr-4 text-right align-top font-mono text-xs">{formatCurrency(item.subCost)}</td>
-                            <td className="py-3 pr-4 text-right align-top font-mono text-xs">{formatCurrency(item.clientPrice)}</td>
+                            <td className={`py-3 pr-4 text-right align-top font-mono text-xs ${hasDisc ? "line-through text-muted-foreground" : ""}`}>{formatCurrency(item.clientPrice)}</td>
+                            {hasDisc && (
+                              <td className="py-3 pr-4 text-right align-top font-mono text-xs text-green-500">
+                                {formatCurrency(discPrice)}
+                                <span className="ml-1 text-[10px] text-green-500/70">{pctLabel}%</span>
+                              </td>
+                            )}
                             <td className="py-3 text-right align-top font-mono text-xs text-green-600 dark:text-green-400">
-                              {formatCurrency(item.clientPrice - item.subCost)}
+                              {formatCurrency(discPrice - item.subCost)}
                             </td>
                           </tr>
                           {/* Breakdown sub-rows for grouped items */}
@@ -508,13 +546,17 @@ export default function EstimateDetailPage() {
                                   {formatCurrency(bd.subCost)}
                                 </td>
                                 <td className="py-1.5 pr-4" />
+                                {hasDisc && <td className="py-1.5 pr-4" />}
                                 <td className="py-1.5" />
                               </tr>
                             ))
                           }
                         </>
-                      ))}
+                      );
+                      })}
                     </tbody>
+                  </>);
+                    })()}
                   </table>
                 </div>
               </CardContent>
