@@ -488,68 +488,43 @@ export async function registerRoutes(
       const { totalClientPrice, milestones } = req.body;
       if (!totalClientPrice || !milestones?.length) return res.status(400).json({ error: "totalClientPrice and milestones required" });
 
-      const anthropic = new Anthropic();
-      const milestoneList = milestones.map((m: any, i: number) => `${i + 1}. ${m.name}${m.amount ? ` (current: $${m.amount})` : ""}`).join("\n");
+      const total = Number(totalClientPrice);
+      const count = milestones.length;
 
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: `You are recalculating payment milestones for a construction estimate.
+      // Deposit: lesser of $1,000 or 10%
+      const deposit = Math.min(1000, Math.round(total * 0.1 * 100) / 100);
 
-Total client price: $${totalClientPrice}
+      // Retention: 10% of total
+      const retention = Math.round(total * 0.1 * 100) / 100;
 
-Current milestones:
-${milestoneList}
+      // Progress budget
+      const progressBudget = total - deposit - retention;
+      const progressCount = Math.max(count - 2, 1); // exclude deposit + retention
 
-Rules:
-- All amounts MUST sum to EXACTLY $${totalClientPrice}
-- First milestone should be deposit: lesser of $1,000 or 10% of total
-- Last milestone is retention/final walkthrough: approximately 10% of total
-- Progress payments should be top-heavy (earlier milestones slightly larger)
-- Round progress payments to nearest $500 (over $5K) or $100 (under $5K)
-- Retention absorbs all rounding differences
-- Keep the milestone NAMES exactly as provided, just fill in the amounts
-- If a milestone has $0, assign it a proportional amount
-
-Return ONLY a JSON object: {"milestones": [{"name": "...", "amount": 1234}]}`
-        }],
-      });
-
-      trackUsage("claude_ai", "recalc_milestones", (req as any).user?.id);
-      const text = response.content[0].type === "text" ? response.content[0].text : "";
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) return res.status(422).json({ error: "Could not parse AI response" });
-
-      const parsed = JSON.parse(jsonMatch[0]);
-
-      // Safety: fix negatives and ensure sum matches
-      if (parsed.milestones && parsed.milestones.length > 1) {
-        const lastIdx = parsed.milestones.length - 1;
-        const deposit = parsed.milestones[0]?.amount || 0;
-        const progressMs = parsed.milestones.slice(1, lastIdx);
-        const progressSum = progressMs.reduce((s: number, m: any) => s + (m.amount || 0), 0);
-        const finalPayment = totalClientPrice - deposit - progressSum;
-
-        if (finalPayment < 0) {
-          // Scale down progress payments
-          const targetRetention = Math.max(Math.round(totalClientPrice * 0.1), 500);
-          const progressBudget = totalClientPrice - deposit - targetRetention;
-          if (progressSum > 0 && progressBudget > 0) {
-            const scale = progressBudget / progressSum;
-            for (const m of progressMs) {
-              m.amount = Math.round((m.amount * scale) / 500) * 500;
-            }
-          }
-          const newProgressSum = progressMs.reduce((s: number, m: any) => s + (m.amount || 0), 0);
-          parsed.milestones[lastIdx].amount = Math.round((totalClientPrice - deposit - newProgressSum) * 100) / 100;
-        } else {
-          parsed.milestones[lastIdx].amount = Math.round(finalPayment * 100) / 100;
-        }
+      // Distribute top-heavy: first progress gets more, last gets less
+      const progressAmounts: number[] = [];
+      let remaining = progressBudget;
+      for (let i = 0; i < progressCount; i++) {
+        const weight = (progressCount - i) / ((progressCount * (progressCount + 1)) / 2);
+        let amt = progressBudget * weight;
+        // Round to nearest $500 if >$5K, $100 if <$5K
+        amt = amt >= 5000 ? Math.round(amt / 500) * 500 : Math.round(amt / 100) * 100;
+        progressAmounts.push(amt);
+        remaining -= amt;
       }
 
-      res.json(parsed);
+      // Build result keeping original names
+      const result = milestones.map((m: any, i: number) => {
+        if (i === 0) return { name: m.name, amount: deposit };
+        if (i === count - 1) {
+          // Retention absorbs all rounding
+          const othersSum = deposit + progressAmounts.reduce((s, a) => s + a, 0);
+          return { name: m.name, amount: Math.round((total - othersSum) * 100) / 100 };
+        }
+        return { name: m.name, amount: progressAmounts[i - 1] || 0 };
+      });
+
+      res.json({ milestones: result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
