@@ -1,12 +1,13 @@
 import { Link, useLocation } from "wouter";
 import { useTheme } from "./theme-provider";
-import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X, Users, LogOut, MessageSquare, Upload, Database, Inbox, MessageCircle, AlertTriangle, Contact, BarChart3 } from "lucide-react";
+import { LayoutDashboard, FileText, Plus, Sun, Moon, Menu, X, Users, LogOut, MessageSquare, Upload, Database, Inbox, MessageCircle, AlertTriangle, Contact, BarChart3, Shield, ArrowRightLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 function Logo() {
   return (
@@ -38,6 +39,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const isAdmin = user?.role === "admin";
   const canUsePricingAssistant = user?.role === "admin" || user?.role === "estimator";
 
+  const { data: platformMe } = useQuery<{ isPlatformAdmin: boolean; memberships: Array<{ org_id: number; name: string; slug: string }> }>({
+    queryKey: ["/api/platform/me"],
+  });
+  const isPlatformAdmin = platformMe?.isPlatformAdmin ?? false;
+
   const getInitials = (name: string) =>
     name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
 
@@ -53,6 +59,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     ...(isAdmin ? [{ href: "/admin/users", label: "Team", icon: Users }] : []),
     ...(isAdmin ? [{ href: "/admin/usage", label: "Usage & Logs", icon: BarChart3 }] : []),
     ...(isAdmin ? [{ href: "/admin/errors", label: "Error Log", icon: AlertTriangle }] : []),
+    ...(isPlatformAdmin ? [{ href: "/platform", label: "Platform", icon: Shield }] : []),
   ];
 
   return (
@@ -132,6 +139,34 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         </nav>
         
         <div className="p-3 border-t space-y-1">
+          {/* Org switcher for platform admins */}
+          {isPlatformAdmin && platformMe && platformMe.memberships.length > 0 && (
+            <div className="mb-2 px-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Organization</label>
+              <select
+                className="w-full mt-1 text-xs bg-background border rounded px-2 py-1.5"
+                defaultValue=""
+                onChange={async (e) => {
+                  const orgId = parseInt(e.target.value);
+                  if (!orgId) return;
+                  try {
+                    const res = await apiRequest("POST", "/api/platform/switch-org", { orgId });
+                    const data = await res.json();
+                    if (data.token) {
+                      const { setToken } = await import("@/lib/auth");
+                      setToken(data.token);
+                      window.location.reload();
+                    }
+                  } catch {}
+                }}
+              >
+                <option value="" disabled>Switch org...</option>
+                {platformMe.memberships.map((m: any) => (
+                  <option key={m.org_id} value={m.org_id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <Button
             variant="ghost"
             size="sm"

@@ -2979,12 +2979,19 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
         WHERE m.user_id = ${user.id} AND m.is_active = true AND o.is_active = true
       `);
 
+      // Platform admins can see all orgs for switching
+      let memberships = memRows.rows;
+      if (isPlatformAdmin) {
+        const allOrgs = await db.execute(sql`SELECT id as org_id, 'org_admin' as role, name, slug FROM organizations WHERE is_active = true ORDER BY id`);
+        memberships = allOrgs.rows;
+      }
+
       res.json({
         userId: user.id,
         email: user.email,
         name: user.name,
         isPlatformAdmin,
-        memberships: memRows.rows,
+        memberships,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -3030,6 +3037,158 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
         WHERE m.org_id = ${orgId} ORDER BY m.created_at
       `);
       res.json(members.rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Platform Admin: Org CRUD ───────────────────────────────────────────
+
+  async function requirePlatformAdmin(req: Request, res: Response, next: NextFunction) {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const pa = await db.execute(sql`SELECT id FROM platform_admins WHERE user_id = ${user.id}`);
+    if (pa.rows.length === 0) return res.status(403).json({ error: "Platform admin only" });
+    return next();
+  }
+
+  // POST /api/platform/orgs — create new organization
+  app.post("/api/platform/orgs", requireAuth as any, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+      const { name, slug, address, city, state, zip, phone, email, website, licenseNumber } = req.body;
+      if (!name || !slug) return res.status(400).json({ error: "name and slug are required" });
+
+      // Check slug uniqueness
+      const existing = await db.execute(sql`SELECT id FROM organizations WHERE slug = ${slug.toLowerCase()}`);
+      if (existing.rows.length > 0) return res.status(400).json({ error: "Slug already taken" });
+
+      const rows = await db.execute(sql`
+        INSERT INTO organizations (name, slug, address, city, state, zip, phone, email, website, license_number, created_at)
+        VALUES (${name}, ${slug.toLowerCase()}, ${address || null}, ${city || null}, ${state || null}, ${zip || null}, ${phone || null}, ${email || null}, ${website || null}, ${licenseNumber || null}, NOW())
+        RETURNING *
+      `);
+      res.json(rows.rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PUT /api/platform/orgs/:id — update org
+  app.put("/api/platform/orgs/:id", requireAuth as any, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      const { name, address, city, state, zip, phone, email, website, licenseNumber, isActive } = req.body;
+      const rows = await db.execute(sql`
+        UPDATE organizations SET
+          name = COALESCE(${name}, name),
+          address = COALESCE(${address}, address),
+          city = COALESCE(${city}, city),
+          state = COALESCE(${state}, state),
+          zip = COALESCE(${zip}, zip),
+          phone = COALESCE(${phone}, phone),
+          email = COALESCE(${email}, email),
+          website = COALESCE(${website}, website),
+          license_number = COALESCE(${licenseNumber}, license_number),
+          is_active = COALESCE(${isActive}, is_active)
+        WHERE id = ${orgId} RETURNING *
+      `);
+      if (rows.rows.length === 0) return res.status(404).json({ error: "Org not found" });
+      res.json(rows.rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/platform/orgs/:id — deactivate org (soft delete)
+  app.delete("/api/platform/orgs/:id", requireAuth as any, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      if (orgId === 1) return res.status(400).json({ error: "Cannot delete the primary organization" });
+      await db.execute(sql`UPDATE organizations SET is_active = false WHERE id = ${orgId}`);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/platform/orgs/:id/members — add user to org
+  app.post("/api/platform/orgs/:id/members", requireAuth as any, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.id);
+      const { email, role } = req.body;
+      if (!email) return res.status(400).json({ error: "email is required" });
+
+      // Find or create user
+      let user = await storage.getUserByEmail(email);
+      if (!user) {
+        // Pre-create a placeholder user
+        user = await storage.createUser({
+          googleId: "",
+          email,
+          name: email.split("@")[0],
+          role: role || "estimator",
+          isActive: true,
+          createdAt: new Date(),
+        });
+      }
+
+      // Add membership
+      await db.execute(sql`
+        INSERT INTO org_memberships (user_id, org_id, role, is_active, created_at)
+        VALUES (${user.id}, ${orgId}, ${role || "estimator"}, true, NOW())
+        ON CONFLICT (user_id, org_id) DO UPDATE SET role = ${role || "estimator"}, is_active = true
+      `);
+
+      res.json({ ok: true, userId: user.id, email: user.email, role: role || "estimator" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/platform/orgs/:orgId/members/:userId — remove user from org
+  app.delete("/api/platform/orgs/:orgId/members/:userId", requireAuth as any, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.orgId);
+      const userId = parseInt(req.params.userId);
+      await db.execute(sql`UPDATE org_memberships SET is_active = false WHERE org_id = ${orgId} AND user_id = ${userId}`);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PATCH /api/platform/orgs/:orgId/members/:userId — change member role
+  app.patch("/api/platform/orgs/:orgId/members/:userId", requireAuth as any, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = parseInt(req.params.orgId);
+      const userId = parseInt(req.params.userId);
+      const { role } = req.body;
+      if (!role) return res.status(400).json({ error: "role is required" });
+      await db.execute(sql`UPDATE org_memberships SET role = ${role} WHERE org_id = ${orgId} AND user_id = ${userId}`);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/platform/switch-org — platform admin switches active org (issues new JWT)
+  app.post("/api/platform/switch-org", requireAuth as any, requirePlatformAdmin, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user as User;
+      const { orgId } = req.body;
+      if (!orgId) return res.status(400).json({ error: "orgId required" });
+
+      // Verify org exists
+      const orgRows = await db.execute(sql`SELECT id FROM organizations WHERE id = ${orgId} AND is_active = true`);
+      if (orgRows.rows.length === 0) return res.status(404).json({ error: "Org not found" });
+
+      // Issue new JWT with the selected org
+      const token = jwt.sign(
+        { userId: user.id, email: user.email, role: user.role, orgId, orgRole: "org_admin" },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+      res.json({ token, orgId });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
