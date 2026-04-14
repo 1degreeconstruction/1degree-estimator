@@ -435,10 +435,12 @@ export default function ClientEstimate() {
                       const originalPrice = section.collectivePrice !== null ? section.collectivePrice : section.items[0].clientPrice;
                       const discountedPrice = Math.round(originalPrice * discountRatio * 100) / 100;
                       if (hasDiscount && discountRatio < 1) {
+                        const pctOff = Math.round((1 - discountRatio) * 100);
                         return (
-                          <div className="text-right">
-                            <span className="font-mono text-xs text-muted-foreground line-through mr-2">{formatCurrency(originalPrice)}</span>
+                          <div className="text-right flex items-center gap-2">
+                            <span className="font-mono text-xs text-muted-foreground line-through">{formatCurrency(originalPrice)}</span>
                             <span className="font-mono text-sm font-semibold text-green-600 dark:text-green-400">{formatCurrency(discountedPrice)}</span>
+                            <span className="text-[10px] font-semibold text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-500/15 px-1.5 py-0.5 rounded">{pctOff}% off</span>
                           </div>
                         );
                       }
@@ -513,6 +515,7 @@ export default function ClientEstimate() {
                   }
                 }
 
+                const savingsPct = originalPrice > 0 ? Math.round((savings / originalPrice) * 100) : 0;
                 return (
                   <div className="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-lg p-3 mb-2">
                     <div className="flex justify-between text-sm">
@@ -520,7 +523,7 @@ export default function ClientEstimate() {
                       <span className="font-mono line-through text-muted-foreground">{formatCurrency(originalPrice)}</span>
                     </div>
                     <div className="flex justify-between text-sm font-semibold text-green-700 dark:text-green-400">
-                      <span>You Save</span>
+                      <span>You Save ({savingsPct}%)</span>
                       <span className="font-mono">-{formatCurrency(savings)}</span>
                     </div>
                   </div>
