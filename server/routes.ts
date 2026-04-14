@@ -1126,6 +1126,54 @@ Rules:
     }
   });
 
+  // GET /api/estimates/:id/versions/:versionNumber — get a single version's snapshot
+  app.get("/api/estimates/:id/versions/:versionNumber", requireAuth as any, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const vNum = parseInt(req.params.versionNumber);
+      const result = await db.execute(sql`
+        SELECT v.*, u.name as changed_by_name
+        FROM estimate_versions v LEFT JOIN users u ON u.id = v.changed_by_user_id
+        WHERE v.estimate_id = ${id} AND v.version_number = ${vNum}
+      `);
+      if (result.rows.length === 0) return res.status(404).json({ error: "Version not found" });
+      const version = result.rows[0] as any;
+      // Return the snapshot in the same shape as the public estimate endpoint
+      const snap = version.snapshot_json;
+      res.json({
+        ...snap.estimate,
+        totalSubCost: undefined,
+        salesRep: snap.estimate?.salesRep || null,
+        lineItems: snap.lineItems || [],
+        milestones: snap.milestones || [],
+        discount: snap.discount || null,
+        _version: { number: version.version_number, changedAt: version.changed_at, changedBy: version.changed_by_name, summary: version.change_summary },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/estimates/:id/track-download — track PDF download
+  app.post("/api/estimates/:id/track-download", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { versionNumber } = req.body;
+      const estimate = await storage.getEstimate(id);
+      if (!estimate) return res.status(404).json({ error: "Not found" });
+
+      // Log download event
+      const userAgent = req.headers["user-agent"] || "";
+      const ip = req.headers["x-forwarded-for"] || req.ip || "unknown";
+      const meta = JSON.stringify({ ip: typeof ip === "string" ? ip : ip[0], userAgent: userAgent.slice(0, 200), versionNumber: versionNumber || "current" });
+      await storage.createEvent({ estimateId: id, eventType: "pdf_downloaded", timestamp: new Date(), metadata: meta }).catch(() => {});
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // POST /api/estimates/:id/send-followup — manual follow-up email
   app.post("/api/estimates/:id/send-followup", requireAuth as any, async (req: Request, res: Response) => {
     try {

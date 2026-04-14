@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {
   Edit, ExternalLink, Copy, Send, ArrowLeft,
-  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers, Upload, Plus, X, UserPlus, Trash2, History, ChevronDown, ChevronUp
+  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers, Upload, Plus, X, UserPlus, Trash2, History
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getStatusLabel } from "@/lib/utils";
@@ -195,8 +195,6 @@ export default function EstimateDetailPage() {
   const [extraEmails, setExtraEmails] = useState<string[]>([]);
   const [emailInput, setEmailInput] = useState("");
   const [showEmailPanel, setShowEmailPanel] = useState(false);
-  const [expandedVersion, setExpandedVersion] = useState<number | null>(null);
-
   const { data: versions = [] } = useQuery<any[]>({
     queryKey: ["/api/estimates", params.id, "versions"],
     queryFn: async () => {
@@ -737,115 +735,45 @@ export default function EstimateDetailPage() {
             </Card>
 
             {/* Version History */}
-            {(() => {
-              const currentVersion = {
-                version_number: 0,
-                isCurrent: true,
-                change_summary: "Current version",
-                changed_at: estimate.createdAt,
-                changed_by_name: null,
-                snapshot_json: { estimate, lineItems: estimate.lineItems, milestones: estimate.milestones },
-              };
-              const allVersions = [currentVersion, ...versions];
-              return (
-                <Card data-testid="card-versions">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                      <History className="w-4 h-4" /> Version History ({allVersions.length})
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {allVersions.map((v: any) => {
-                      const snap = v.snapshot_json;
-                      const isExpanded = expandedVersion === v.version_number;
-                      const snapEstimate = snap?.estimate;
-                      const snapItems: any[] = snap?.lineItems || [];
-                      const snapMilestones: any[] = snap?.milestones || [];
-                      const isCurrent = v.isCurrent === true;
-                      return (
-                        <div key={v.version_number ?? v.id} className={`border rounded-lg overflow-hidden ${
-                          isCurrent ? "border-green-500/50 bg-green-500/5" : "border-border"
-                        }`}>
-                          <button
-                            className={`w-full flex items-center justify-between px-3 py-2 text-left transition-colors ${
-                              isCurrent ? "hover:bg-green-500/10" : "hover:bg-muted/50"
-                            }`}
-                            onClick={() => setExpandedVersion(isExpanded ? null : v.version_number)}
-                            data-testid={`version-toggle-${isCurrent ? "current" : v.version_number}`}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              {isCurrent ? (
-                                <Badge className="text-[10px] shrink-0 bg-green-600 hover:bg-green-600 text-white">Current</Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-[10px] shrink-0">v{v.version_number}</Badge>
-                              )}
-                              <span className={`text-xs truncate ${isCurrent ? "text-green-400" : "text-muted-foreground"}`}>{v.change_summary}</span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {!isCurrent && <span className="text-[10px] text-muted-foreground">{formatDateTime(v.changed_at)}</span>}
-                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                            </div>
-                          </button>
-                          {isExpanded && snapEstimate && (
-                            <div className={`px-3 pb-3 space-y-3 border-t ${
-                              isCurrent ? "border-green-500/30 bg-green-500/5" : "border-border bg-muted/20"
-                            }`}>
-                              <div className="grid grid-cols-2 gap-2 pt-3 text-xs">
-                                <div><span className="text-muted-foreground">Client:</span> {snapEstimate.clientName}</div>
-                                <div><span className="text-muted-foreground">Email:</span> {snapEstimate.clientEmail}</div>
-                                <div><span className="text-muted-foreground">Address:</span> {snapEstimate.projectAddress}</div>
-                                <div><span className="text-muted-foreground">Status:</span> {snapEstimate.status}</div>
-                                <div><span className="text-muted-foreground">Markup:</span> {snapEstimate.markupRate}%</div>
-                                <div><span className="text-muted-foreground">Total:</span> {formatCurrency(snapEstimate.totalClientPrice)}</div>
-                              </div>
-                              {snapItems.length > 0 && (
-                                <div>
-                                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Line Items ({snapItems.length})</p>
-                                  <table className="w-full text-xs">
-                                    <thead><tr className="text-muted-foreground border-b">
-                                      <th className="text-left py-1 font-medium">Phase</th>
-                                      <th className="text-left py-1 font-medium">Description</th>
-                                      <th className="text-right py-1 font-medium">Sub Cost</th>
-                                      <th className="text-right py-1 font-medium">Client Price</th>
-                                    </tr></thead>
-                                    <tbody>
-                                      {snapItems.map((item: any, idx: number) => (
-                                        <tr key={idx} className="border-b border-border/50">
-                                          <td className="py-1">{getPhaseLabel(item.phase, item.customPhaseLabel)}</td>
-                                          <td className="py-1 text-muted-foreground">{item.description}</td>
-                                          <td className="py-1 text-right">{formatCurrency(item.subCost)}</td>
-                                          <td className="py-1 text-right">{formatCurrency(item.clientPrice)}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                              {snapMilestones.length > 0 && (
-                                <div>
-                                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Payment Milestones</p>
-                                  <div className="space-y-1">
-                                    {snapMilestones.map((ms: any, idx: number) => (
-                                      <div key={idx} className="flex justify-between text-xs">
-                                        <span>{ms.name}</span>
-                                        <span className="font-medium">{formatCurrency(ms.amount)}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {v.changed_by_name && (
-                                <p className="text-[10px] text-muted-foreground">Sent by {v.changed_by_name}</p>
-                              )}
-                            </div>
-                          )}
+            <Card data-testid="card-versions">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <History className="w-4 h-4" /> Version History
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {/* Current version */}
+                <div className="border border-green-500/50 bg-green-500/5 rounded-lg px-3 py-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge className="text-[10px] bg-green-600 hover:bg-green-600 text-white">Current</Badge>
+                    <span className="text-xs text-green-400">Live version</span>
+                  </div>
+                  <span className="text-xs font-mono text-green-400">{formatCurrency(estimate.totalClientPrice)}</span>
+                </div>
+                {/* Past versions */}
+                {versions.map((v: any) => {
+                  const snap = v.snapshot_json?.estimate;
+                  return (
+                    <Link key={v.id} href={`/estimates/${estimate.id}/version/${v.version_number}`}>
+                      <div className="border border-border rounded-lg px-3 py-2 flex items-center justify-between hover:bg-muted/50 transition-colors cursor-pointer">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge variant="outline" className="text-[10px] shrink-0">v{v.version_number}</Badge>
+                          <span className="text-xs text-muted-foreground truncate">{v.change_summary}</span>
                         </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              );
-            })()}
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-xs font-mono">{snap ? formatCurrency(snap.totalClientPrice) : ""}</span>
+                          <span className="text-[10px] text-muted-foreground">{formatDateTime(v.changed_at)}</span>
+                          <ExternalLink className="w-3 h-3 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+                {versions.length === 0 && (
+                  <p className="text-xs text-muted-foreground">No sent versions yet. Versions are captured each time you send.</p>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Signature Info */}
             {estimate.signatureName && (

@@ -10,6 +10,7 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import EstimateForm from "@/pages/estimate-form";
 import EstimateDetail from "@/pages/estimate-detail";
+import VersionPreview from "@/pages/version-preview";
 import ClientEstimate from "@/pages/client-estimate";
 import ClientConfirmation from "@/pages/client-confirmation";
 import Login from "@/pages/login";
@@ -79,6 +80,13 @@ function AppRouter() {
         {() => (
           <AuthGuard>
             <EstimateForm />
+          </AuthGuard>
+        )}
+      </Route>
+      <Route path="/estimates/:id/version/:versionNumber">
+        {() => (
+          <AuthGuard>
+            <VersionPreview />
           </AuthGuard>
         )}
       </Route>
