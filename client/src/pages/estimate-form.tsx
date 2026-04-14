@@ -1806,7 +1806,7 @@ export default function EstimateForm() {
                 step={5}
                 value={markupRate}
                 onChange={e => setMarkupRate(Math.max(0, parseFloat(e.target.value) || 0))}
-                className="h-5 w-14 text-xs font-mono text-right inline-block"
+                className="h-6 w-20 text-xs font-mono text-right inline-block px-2"
                 data-testid="input-markup-rate"
               />
               <span className="text-muted-foreground">%</span>
