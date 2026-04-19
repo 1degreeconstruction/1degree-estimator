@@ -190,6 +190,13 @@ export async function registerRoutes(
           // Update last login + store fresh tokens
           const tokenUpdates: Partial<User> = { lastLoginAt: new Date(), googleAccessToken: accessToken };
           if (refreshToken) tokenUpdates.googleRefreshToken = refreshToken;
+          // Re-check membership in case user was added to an org after initial sign-in
+          if (!user.isActive) {
+            const memCheck = await db.execute(sql`
+              SELECT 1 FROM org_memberships WHERE user_id = ${user.id} AND is_active = true LIMIT 1
+            `);
+            if (memCheck.rows.length > 0) tokenUpdates.isActive = true;
+          }
           user = await storage.updateUser(user.id, tokenUpdates);
           return done(null, user as Express.User);
         }
