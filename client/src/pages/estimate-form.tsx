@@ -75,6 +75,41 @@ export default function EstimateForm() {
   const isEditing = !!params.id;
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Warn on browser back / tab close when there are unsaved changes
+  useEffect(() => {
+    const beforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) { e.preventDefault(); e.returnValue = ""; }
+    };
+    // Intercept in-app hash navigation (sidebar clicks, back button)
+    const hashChange = (e: HashChangeEvent) => {
+      if (hasUnsavedChanges) {
+        if (!window.confirm("You have unsaved changes. Leave without saving?")) {
+          e.preventDefault();
+          // Restore the hash to stay on the form
+          window.history.pushState(null, "", e.oldURL);
+        }
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    window.addEventListener("hashchange", hashChange);
+    return () => { window.removeEventListener("beforeunload", beforeUnload); window.removeEventListener("hashchange", hashChange); };
+  }, [hasUnsavedChanges]);
+
+  // Mark dirty on any form interaction
+  const markDirty = () => { if (!hasUnsavedChanges) setHasUnsavedChanges(true); };
+
+  // Track form changes via a capturing listener on the form container
+  useEffect(() => {
+    const handler = () => markDirty();
+    const container = document.querySelector('[data-testid="estimate-form"]');
+    if (container) {
+      container.addEventListener("input", handler, true);
+      container.addEventListener("change", handler, true);
+      return () => { container.removeEventListener("input", handler, true); container.removeEventListener("change", handler, true); };
+    }
+  });
 
   // Form state
   const [clientName, setClientName] = useState("");
@@ -785,6 +820,7 @@ export default function EstimateForm() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       toast({ title: "Estimate created", description: `${data.estimateNumber} saved successfully.` });
+      setHasUnsavedChanges(false);
       navigate(`/estimates/${data.id}`);
     },
     onError: (err: any) => {
@@ -815,6 +851,7 @@ export default function EstimateForm() {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", params.id] });
       toast({ title: "Estimate updated" });
+      setHasUnsavedChanges(false);
       navigate(`/estimates/${params.id}`);
     },
     onError: (err: any) => {
@@ -867,7 +904,7 @@ export default function EstimateForm() {
 
   return (
     <AdminLayout>
-      <div className="p-6 max-w-5xl mx-auto space-y-6 pb-24">
+      <div className="p-6 max-w-5xl mx-auto space-y-6 pb-24" data-testid="estimate-form">
         {/* Header */}
         <div data-testid="form-header">
           <h1 className="font-display text-xl font-bold" data-testid="page-title">
