@@ -317,6 +317,7 @@ export async function registerRoutes(
       { method: "GET", pattern: /^\/sales-reps$/ },
       { method: "GET", pattern: /^\/estimates\/public\/.*\/messages$/ },
       { method: "POST", pattern: /^\/estimates\/public\/.*\/messages$/ },
+      { method: "POST", pattern: /^\/estimates\/public\/.*\/track-download$/ },
     ];
 
     for (const route of publicRoutes) {
@@ -1100,7 +1101,10 @@ Rules:
           `);
         }
       } catch (snapErr: any) {
-        console.error("[version-snapshot]", snapErr.message);
+        console.error("[version-snapshot]", snapErr.message, snapErr.stack);
+        try {
+          await db.execute(sql`INSERT INTO error_log (route, method, status, error_message, stack, user_id, org_id) VALUES (${'version-snapshot'}, ${'POST'}, ${500}, ${snapErr.message || 'unknown'}, ${snapErr.stack?.slice(0, 2000) || ''}, ${user.id}, ${(req as any).orgId || 1})`);
+        } catch {}
       }
 
       await storage.logActivity({
@@ -1156,6 +1160,23 @@ Rules:
         discount: snap.discount || null,
         _version: { number: version.version_number, changedAt: version.changed_at, changedBy: version.changed_by_name, summary: version.change_summary },
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/estimates/public/:uniqueId/track-download — track PDF download (public, no auth)
+  app.post("/api/estimates/public/:uniqueId/track-download", async (req: Request, res: Response) => {
+    try {
+      const estimate = await storage.getEstimateByUniqueId(req.params.uniqueId);
+      if (!estimate) return res.status(404).json({ error: "Not found" });
+
+      const userAgent = req.headers["user-agent"] || "";
+      const ip = req.headers["x-forwarded-for"] || req.ip || "unknown";
+      const meta = JSON.stringify({ ip: typeof ip === "string" ? ip : ip[0], userAgent: userAgent.slice(0, 200), versionNumber: req.body?.versionNumber || "current", source: "client" });
+      await storage.createEvent({ estimateId: estimate.id, eventType: "pdf_downloaded", timestamp: new Date(), metadata: meta }).catch(() => {});
+
+      res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

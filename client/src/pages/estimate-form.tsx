@@ -76,15 +76,17 @@ export default function EstimateForm() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const dirtyRef = useRef(false);
+  const setDirty = (v: boolean) => { dirtyRef.current = v; setHasUnsavedChanges(v); };
 
   // Warn on browser back / tab close when there are unsaved changes
   useEffect(() => {
     const beforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasUnsavedChanges) { e.preventDefault(); e.returnValue = ""; }
+      if (dirtyRef.current) { e.preventDefault(); e.returnValue = ""; }
     };
     // Intercept in-app hash navigation (sidebar clicks, back button)
     const hashChange = (e: HashChangeEvent) => {
-      if (hasUnsavedChanges) {
+      if (dirtyRef.current) {
         if (!window.confirm("You have unsaved changes. Leave without saving?")) {
           e.preventDefault();
           // Restore the hash to stay on the form
@@ -95,10 +97,10 @@ export default function EstimateForm() {
     window.addEventListener("beforeunload", beforeUnload);
     window.addEventListener("hashchange", hashChange);
     return () => { window.removeEventListener("beforeunload", beforeUnload); window.removeEventListener("hashchange", hashChange); };
-  }, [hasUnsavedChanges]);
+  }, []);
 
   // Mark dirty on any form interaction
-  const markDirty = () => { if (!hasUnsavedChanges) setHasUnsavedChanges(true); };
+  const markDirty = () => { if (!dirtyRef.current) setDirty(true); };
 
   // Track form changes via a capturing listener on the form container
   useEffect(() => {
@@ -820,7 +822,7 @@ export default function EstimateForm() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       toast({ title: "Estimate created", description: `${data.estimateNumber} saved successfully.` });
-      setHasUnsavedChanges(false);
+      setDirty(false);
       navigate(`/estimates/${data.id}`);
     },
     onError: (err: any) => {
@@ -851,7 +853,7 @@ export default function EstimateForm() {
       queryClient.invalidateQueries({ queryKey: ["/api/estimates"] });
       queryClient.invalidateQueries({ queryKey: ["/api/estimates", params.id] });
       toast({ title: "Estimate updated" });
-      setHasUnsavedChanges(false);
+      setDirty(false);
       navigate(`/estimates/${params.id}`);
     },
     onError: (err: any) => {

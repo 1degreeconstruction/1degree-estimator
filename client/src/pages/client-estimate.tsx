@@ -762,7 +762,7 @@ export default function ClientEstimate() {
           <div className="no-print text-center mb-6">
             <button
               onClick={() => {
-                fetch(`/api/estimates/${estimate.id}/track-download`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionNumber: "current" }) }).catch(() => {});
+                fetch(`/api/estimates/public/${estimate.uniqueId}/track-download`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionNumber: "current" }) }).catch(() => {});
                 window.print();
               }}
               className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
