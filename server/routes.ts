@@ -318,6 +318,7 @@ export async function registerRoutes(
       { method: "GET", pattern: /^\/estimates\/public\/.*\/messages$/ },
       { method: "POST", pattern: /^\/estimates\/public\/.*\/messages$/ },
       { method: "POST", pattern: /^\/estimates\/public\/.*\/track-download$/ },
+      { method: "GET", pattern: /^\/health$/ },
     ];
 
     for (const route of publicRoutes) {
@@ -337,6 +338,11 @@ export async function registerRoutes(
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // ─── Health check (keeps Render backend warm) ──────────────────────────
+  app.get("/api/health", (_req, res) => {
+    res.json({ ok: true, timestamp: new Date().toISOString() });
   });
 
   // ─── Daily Color System ──────────────────────────────────────────────
