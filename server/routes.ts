@@ -319,6 +319,7 @@ export async function registerRoutes(
       { method: "POST", pattern: /^\/estimates\/public\/.*\/messages$/ },
       { method: "POST", pattern: /^\/estimates\/public\/.*\/track-download$/ },
       { method: "GET", pattern: /^\/health$/ },
+      { method: "HEAD", pattern: /^\/health$/ },
     ];
 
     for (const route of publicRoutes) {
@@ -344,6 +345,7 @@ export async function registerRoutes(
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
   });
+  app.head("/api/health", (_req, res) => res.status(200).end());
 
   // ─── Daily Color System ──────────────────────────────────────────────
 
