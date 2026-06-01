@@ -27,7 +27,12 @@ export default function VersionPreview() {
   });
 
   const handlePrint = () => {
+    const sanitize = (s: string) => (s || "").replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 60);
+    const filename = estimate ? `${sanitize(estimate.estimateNumber)} - ${sanitize(estimate.clientName)} v${estimate._version?.number || ""}` : "estimate";
+    const originalTitle = document.title;
+    document.title = filename;
     window.print();
+    setTimeout(() => { document.title = originalTitle; }, 1000);
   };
 
   if (isLoading) {

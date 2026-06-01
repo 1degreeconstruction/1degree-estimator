@@ -353,7 +353,7 @@ export default function ClientEstimate() {
   return (
     <>
       {/* ── SECTION 1: Cover Page ─────────────────────────────────────────── */}
-      <div className="no-print">
+      <div className="cover-page-wrapper">
         <CoverPage estimate={estimate} />
       </div>
 
@@ -361,7 +361,7 @@ export default function ClientEstimate() {
       <WelcomeLetter estimate={estimate} />
 
       {/* ── SECTION 3: Trust & Credentials ─────────────────────────────────── */}
-      <div className="no-print">
+      <div>
         <TrustCredentials salesRep={estimate.salesRep} />
       </div>
 
@@ -763,7 +763,13 @@ export default function ClientEstimate() {
             <button
               onClick={() => {
                 fetch(`/api/estimates/public/${estimate.uniqueId}/track-download`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ versionNumber: "current" }) }).catch(() => {});
+                // Set document title for PDF filename: "EstimateNumber - ClientName"
+                const sanitize = (s: string) => (s || "").replace(/[^a-zA-Z0-9 _-]/g, "").trim().slice(0, 60);
+                const filename = `${sanitize(estimate.estimateNumber)} - ${sanitize(estimate.clientName)}`;
+                const originalTitle = document.title;
+                document.title = filename;
                 window.print();
+                setTimeout(() => { document.title = originalTitle; }, 1000);
               }}
               className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
               data-testid="button-download-pdf-client"

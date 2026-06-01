@@ -242,8 +242,22 @@
   .no-print { display: none !important; }
   /* Ensure page breaks work */
   .print-break-before { page-break-before: always; }
-  /* Remove dark backgrounds for printing */
+  .print-break-after { page-break-after: always; }
+  /* Cover page: force full page, page break after, keep dark bg */
+  .cover-page-wrapper {
+    page-break-after: always;
+    break-after: page;
+  }
+  .cover-page-wrapper [data-testid="cover-page"] {
+    min-height: 100vh;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Remove dark backgrounds for printing (except cover page) */
   body { background: white !important; }
+  /* Tighter page margins */
+  @page { margin: 0.5in; }
+  @page :first { margin: 0; }
 }
 
 /* ── Shake animation for challenge modal ─────────────────────────────────── */
