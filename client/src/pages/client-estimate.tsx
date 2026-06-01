@@ -967,7 +967,7 @@ function ChatWidget({ uniqueId, clientName, salesRep }: { uniqueId: string; clie
   const unread = messages.filter(m => m.senderType === "team" && !open).length;
 
   return (
-    <div className="fixed bottom-5 right-5 z-50" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+    <div className="fixed bottom-5 right-5 z-50 no-print" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
       {/* Chat bubble button */}
       {!open && (
         <button
