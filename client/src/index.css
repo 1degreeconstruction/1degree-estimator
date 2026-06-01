@@ -238,26 +238,108 @@
 
 /* ── Print-specific styles for PDF export ───────────────────────────────── */
 @media print {
-  /* Hide non-essential elements when printing */
+  /* ── Page setup ───────────────────────────────────────────────────── */
+  @page {
+    size: letter;
+    margin: 0.5in;
+  }
+  @page :first {
+    margin: 0;
+  }
+
+  /* ── Force print colors to render ─────────────────────────────────── */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* ── Hide non-essential elements ──────────────────────────────────── */
   .no-print { display: none !important; }
-  /* Ensure page breaks work */
-  .print-break-before { page-break-before: always; }
-  .print-break-after { page-break-after: always; }
-  /* Cover page: force full page, page break after, keep dark bg */
+
+  /* ── Page break utility classes ──────────────────────────────────── */
+  .print-break-before { page-break-before: always; break-before: page; }
+  .print-break-after { page-break-after: always; break-after: page; }
+
+  /* ── Body / Layout reset ───────────────────────────────────────────── */
+  html, body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* ── Cover page: dedicated first page with no margins ─────────────────── */
   .cover-page-wrapper {
     page-break-after: always;
     break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
   .cover-page-wrapper [data-testid="cover-page"] {
+    height: 100vh;
     min-height: 100vh;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
+    max-height: 100vh;
+    overflow: hidden;
   }
-  /* Remove dark backgrounds for printing (except cover page) */
-  body { background: white !important; }
-  /* Tighter page margins */
-  @page { margin: 0.5in; }
-  @page :first { margin: 0; }
+  /* On print, no chat widget so don't reserve right padding for license */
+  .cover-page-wrapper [data-testid="cover-page"] > div:last-of-type,
+  .cover-page-wrapper [data-testid="cover-page"] .pr-24,
+  .cover-page-wrapper [data-testid="cover-page"] .sm\:pr-28 {
+    padding-right: 2.5rem !important;
+    padding-bottom: 2.5rem !important;
+  }
+
+  /* ── Welcome letter (override min-h-screen so it doesn't waste pages) ─── */
+  [data-testid="welcome-letter"] {
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    min-height: 0 !important;
+    padding: 0.5in !important;
+  }
+
+  /* ── Trust credentials ───────────────────────────────────────────── */
+  [data-testid="trust-credentials-section"] {
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    min-height: 0 !important;
+    padding: 0.5in !important;
+  }
+
+  /* ── Cards & sections never split mid-content ─────────────────────── */
+  [data-testid^="card-"],
+  [data-testid^="scope-section-"] {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* ── Headings stay with their following content ───────────────────── */
+  h1, h2, h3, h4 {
+    page-break-after: avoid;
+    break-after: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  /* ── Tables don't split rows ────────────────────────────────────── */
+  tr, li {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* ── Approval / signature must stay together with terms ─────────────── */
+  .print\:block.space-y-6 > div {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* ── Remove animations / transitions ─────────────────────────────── */
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 /* ── Shake animation for challenge modal ─────────────────────────────────── */
