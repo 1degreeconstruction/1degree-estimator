@@ -289,14 +289,20 @@
     padding-bottom: 2.5rem !important;
   }
 
-  /* ── Welcome letter (override min-h-screen so it doesn't waste pages) ─── */
+  /* ── Welcome letter (let it flow naturally, just end on page break) ─── */
   [data-testid="welcome-letter"] {
     page-break-after: always;
     break-after: page;
-    page-break-inside: avoid;
-    break-inside: avoid;
+    page-break-before: avoid;
+    break-before: avoid;
     min-height: 0 !important;
-    padding: 0.5in !important;
+    padding: 0 !important;
+  }
+  /* Keep wordmark glued to letter body — don't let it sit alone on a page */
+  [data-testid="welcome-letter"] > div:first-child {
+    page-break-after: avoid;
+    break-after: avoid;
+    padding: 0.3in 0.5in 0 0.5in !important;
   }
 
   /* ── Trust credentials ───────────────────────────────────────────── */
