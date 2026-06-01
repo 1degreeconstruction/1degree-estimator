@@ -181,8 +181,8 @@ function CoverPage({ estimate }: { estimate: ClientEstimate }) {
         </div>
       </div>
 
-      {/* Bottom: Website and license */}
-      <div className="relative z-10 flex items-center justify-between px-6 sm:px-10 pb-16 sm:pb-10 text-white/50 text-[11px] sm:text-xs">
+      {/* Bottom: Website and license (reserves space on the right for chat widget) */}
+      <div className="relative z-10 flex items-center justify-between px-6 sm:px-10 pb-24 sm:pb-16 pr-24 sm:pr-28 text-white/50 text-[11px] sm:text-xs">
         <span>www.1degreeconstruction.com</span>
         <span>Lic. #1075129</span>
       </div>
