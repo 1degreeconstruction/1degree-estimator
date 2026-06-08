@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {
   Edit, ExternalLink, Copy, Send, ArrowLeft,
-  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers, Upload, Plus, X, UserPlus, Trash2, History
+  Clock, Eye, CheckCircle, AlertCircle, FileText, Download, Layers, Upload, Plus, X, UserPlus, Trash2, History, RefreshCw
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getStatusLabel } from "@/lib/utils";
@@ -176,6 +176,21 @@ export default function EstimateDetailPage() {
     },
   });
 
+  const regenerateLinkMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/estimates/${params.id}/regenerate-link`);
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/estimates", params.id] });
+      const newUrl = `${window.location.origin}${window.location.pathname}#/estimate/${data.uniqueId}`;
+      navigator.clipboard?.writeText(newUrl).catch(() => {});
+      toast({ title: "New link generated", description: "Old link is now disabled. New link copied to clipboard." });
+    },
+    onError: (e: any) => toast({ title: "Failed to regenerate link", description: e.message, variant: "destructive" }),
+  });
+
   const { user } = useAuth();
   const [, navigate] = useLocation();
 
@@ -300,6 +315,16 @@ export default function EstimateDetailPage() {
           <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" size="sm" onClick={copyLink} className="gap-2" data-testid="button-copy-link">
               <Copy className="w-4 h-4" /> Copy Link
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={regenerateLinkMutation.isPending}
+              onClick={() => { if (window.confirm("Generate a new client link? The old link will stop working immediately.")) regenerateLinkMutation.mutate(); }}
+              data-testid="button-regenerate-link"
+            >
+              <RefreshCw className="w-4 h-4" /> New Link
             </Button>
             <Button
               variant="outline"
