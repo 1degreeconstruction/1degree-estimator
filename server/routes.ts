@@ -1062,7 +1062,7 @@ Rules:
       // Capture version snapshot — same format as client-facing API response
       try {
         const snapItems = await storage.getLineItems(id);
-        const snapMilestones = await storage.getPaymentMilestones(id);
+        const snapMilestones = await storage.getMilestones(id);
         const snapEstimate = await storage.getEstimate(id);
         if (snapEstimate) {
           // Compute discount display values (mirrors public endpoint)
