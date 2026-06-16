@@ -2734,7 +2734,12 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
 
       res.json(parsed);
     } catch (err: any) {
-      console.error("[ai/generate] error:", err.message || err);
+      console.error("[ai/generate] error:", err.message || err, err.stack);
+      // Capture the real Anthropic SDK error details in DB
+      try {
+        const detail = `msg=${err.message || "unknown"} | status=${err.status || "?"} | type=${err.type || err.constructor?.name || "?"} | body=${typeof err.error === "object" ? JSON.stringify(err.error).slice(0, 500) : (err.error || "")}`;
+        await db.execute(sql`INSERT INTO error_log (route, method, status, error_message, stack, user_id, org_id) VALUES (${'ai-generate-detail'}, ${'POST'}, ${err.status || 500}, ${detail}, ${(err.stack || '').slice(0, 2000)}, ${(req as any).user?.id || null}, ${(req as any).orgId || 1})`);
+      } catch {}
       const msg = err.message?.includes("rate") ? "AI rate limit hit. Wait a moment and try again."
         : err.message?.includes("timeout") ? "AI request timed out. Try a shorter prompt."
         : "AI generation failed. Please try again.";
