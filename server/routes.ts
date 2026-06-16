@@ -719,7 +719,7 @@ export async function registerRoutes(
 
       const anthropic = new Anthropic();
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 500,
         messages: [{
           role: "user",
@@ -1593,7 +1593,7 @@ RULES:
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 1024,
         system: systemPrompt,
         messages: [
@@ -2638,7 +2638,7 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
 
       const anthropic = new Anthropic();
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 8192,
         messages: [{ role: "user", content: finalPrompt + calendarContext }],
         system: systemPrompt,
@@ -2779,7 +2779,7 @@ The sum MUST equal exactly $${totalSubCost}. Use realistic proportions based on 
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const message = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 512,
         messages: [{ role: "user", content: prompt }],
       });
@@ -3002,7 +3002,7 @@ If you can't extract anything useful, return {"items": [], "confidence": "low", 
 
       const anthropicClient = new Anthropic();
       const msg = await anthropicClient.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 1024,
         messages: [{ role: "user", content: parsePrompt }],
       });
