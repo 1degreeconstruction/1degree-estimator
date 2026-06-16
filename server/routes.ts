@@ -2639,8 +2639,8 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
       const anthropic = new Anthropic();
       const message = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
-        max_tokens: 8192,
-        messages: [{ role: "user", content: finalPrompt + calendarContext }],
+        max_tokens: 16000,
+        messages: [{ role: "user", content: finalPrompt + calendarContext + "\n\nReturn ONLY a valid JSON object. No markdown, no code fences, no commentary before or after." }],
         system: systemPrompt,
       });
 
@@ -2654,18 +2654,38 @@ Note: "breakdowns" is required for isGrouped=true line items. For non-grouped it
 
       // Parse the JSON from the response
       const responseText = textBlock.text;
-      // Try to extract JSON from the response (may be wrapped in markdown code blocks)
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        console.error("[ai/generate] No JSON found in response:", responseText.slice(0, 500));
+
+      // Robust JSON extraction — try multiple strategies
+      const extractJson = (text: string): string | null => {
+        // 1) Try ```json ... ``` code block
+        const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (codeBlockMatch) return codeBlockMatch[1].trim();
+        // 2) Find the outermost balanced { ... }
+        const firstBrace = text.indexOf("{");
+        const lastBrace = text.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          return text.slice(firstBrace, lastBrace + 1);
+        }
+        return null;
+      };
+
+      const jsonStr = extractJson(responseText);
+      if (!jsonStr) {
+        console.error("[ai/generate] No JSON found in response:", responseText.slice(0, 1000));
+        try {
+          await db.execute(sql`INSERT INTO error_log (route, method, status, error_message, stack, user_id, org_id) VALUES (${'ai-generate-noparse'}, ${'POST'}, ${422}, ${'No JSON found'}, ${responseText.slice(0, 2000)}, ${(req as any).user?.id || null}, ${(req as any).orgId || 1})`);
+        } catch {}
         return res.status(422).json({ error: "The AI response wasn't in the expected format. Please try again — sometimes rephrasing the prompt helps." });
       }
 
       let parsed;
       try {
-        parsed = JSON.parse(jsonMatch[0]);
+        parsed = JSON.parse(jsonStr);
       } catch (parseErr: any) {
-        console.error("[ai/generate] JSON parse error:", parseErr.message, responseText.slice(0, 500));
+        console.error("[ai/generate] JSON parse error:", parseErr.message, jsonStr.slice(0, 500));
+        try {
+          await db.execute(sql`INSERT INTO error_log (route, method, status, error_message, stack, user_id, org_id) VALUES (${'ai-generate-parse'}, ${'POST'}, ${422}, ${parseErr.message || 'parse failed'}, ${jsonStr.slice(0, 2000)}, ${(req as any).user?.id || null}, ${(req as any).orgId || 1})`);
+        } catch {}
         return res.status(422).json({ error: "The AI returned malformed data. Please try again." });
       }
 
