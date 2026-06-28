@@ -341,11 +341,27 @@ export async function registerRoutes(
     }
   });
 
-  // ─── Health check (keeps Render backend warm) ──────────────────────────
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true, timestamp: new Date().toISOString() });
+  // ─── Health check (keeps Render backend AND Supabase DB warm) ───────────
+  // UptimeRobot pings this every 5 min. Each ping also runs SELECT 1 on the DB
+  // so Supabase doesn't pause from inactivity. DB failure does NOT fail the
+  // health check — we still return 200 so the uptime monitor stays green and
+  // can detect actual server outages vs database hiccups.
+  app.get("/api/health", async (_req, res) => {
+    let dbStatus: "ok" | "error" = "ok";
+    let dbError: string | undefined;
+    try {
+      await db.execute(sql`SELECT 1`);
+    } catch (e: any) {
+      dbStatus = "error";
+      dbError = e.message?.slice(0, 200);
+      console.error("[health] DB ping failed:", e.message);
+    }
+    res.json({ ok: true, timestamp: new Date().toISOString(), db: dbStatus, ...(dbError ? { dbError } : {}) });
   });
-  app.head("/api/health", (_req, res) => res.status(200).end());
+  app.head("/api/health", async (_req, res) => {
+    try { await db.execute(sql`SELECT 1`); } catch (e: any) { console.error("[health HEAD] DB ping failed:", e.message); }
+    res.status(200).end();
+  });
 
   // ─── Daily Color System ──────────────────────────────────────────────
 
